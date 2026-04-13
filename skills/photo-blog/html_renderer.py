@@ -8,11 +8,14 @@ from typing import Dict, List, Optional
 
 
 def _img_to_base64(path: str, max_width: int = 800) -> str:
-    """Convert image to base64, optionally resizing for HTML embedding."""
+    """Convert image to base64 with EXIF orientation fix and resize."""
     try:
-        from PIL import Image
+        from PIL import Image, ImageOps
         import io
         img = Image.open(path)
+        img = ImageOps.exif_transpose(img)
+        if img.mode in ("RGBA", "P", "LA"):
+            img = img.convert("RGB")
         w, h = img.size
         if w > max_width:
             ratio = max_width / w

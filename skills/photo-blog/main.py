@@ -19,7 +19,7 @@ import sys
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 
-from image_analyzer import analyze_photos, select_highlights, PhotoAnalysis
+from image_analyzer import analyze_photos, select_highlights, PhotoAnalysis, extract_photo_date
 from blog_generator import generate_blog_content
 from html_renderer import render_blog_html
 
@@ -98,9 +98,17 @@ def main():
             json.dump({"all": all_dicts, "highlights": highlight_dicts}, f, ensure_ascii=False, indent=2)
         print(f"  Analysis saved to {args.save_analysis}")
 
+    # Auto-detect date from photos if not provided
+    date_str = args.date
+    if not date_str:
+        for p in image_paths:
+            date_str = extract_photo_date(p)
+            if date_str:
+                break
+
     # Step 4: Generate blog content
     print(f"\n[4/4] Generating blog content...")
-    blog_content = generate_blog_content(all_dicts, highlight_dicts, date_str=args.date)
+    blog_content = generate_blog_content(all_dicts, highlight_dicts, date_str=date_str)
     print(f"  Title: {blog_content.get('title', '?')}")
     print(f"  Insights: {len(blog_content.get('insights', []))} items")
     print(f"  Tip: {blog_content.get('tip', '?')[:50]}...")

@@ -38,11 +38,14 @@ def _get_client(cfg: dict):
 
 
 def _load_image_bytes(path: str, max_pixels: int = 800 * 800) -> Tuple[bytes, str]:
-    """Load and optionally resize an image for API submission."""
+    """Load image with EXIF orientation fix, resize, return JPEG bytes."""
     try:
-        from PIL import Image
+        from PIL import Image, ImageOps
         import io
         img = Image.open(path)
+        img = ImageOps.exif_transpose(img)
+        if img.mode in ("RGBA", "P", "LA"):
+            img = img.convert("RGB")
         w, h = img.size
         if w * h > max_pixels:
             ratio = math.sqrt(max_pixels / (w * h))
@@ -63,6 +66,11 @@ STORYBOARD_PROMPT = """你是一位温暖治愈系的漫画编剧。基于以下
 1. 所有漫画场景必须基于真实照片内容改编，不可凭空虚构不存在的场景
 2. 情感基调：温暖治愈，可以温情也可以激情，避免过度理性
 3. 漫画风格：温暖的手绘插画风格，色彩柔和但有层次
+
+**主题创意要求（极其重要）**：
+- 主题必须有创意和个性，不要使用"烟火""烟火气""人间烟火"等过于常见的词汇
+- 从照片场景中提炼独特的情感主题，例如：探索与发现、味蕾的旅行、光与影的对话、城市呼吸、漫步者日记、味觉地图、屋檐下的故事等
+- 标题风格可以诗意、可以俏皮、可以哲理，但不要千篇一律
 
 **精选漫画素材**（按评分排序的高光时刻）：
 {panels_json}

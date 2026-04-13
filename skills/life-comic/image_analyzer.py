@@ -7,10 +7,13 @@ Focuses on identifying "story-worthy" moments for comic panel adaptation.
 import json
 import math
 import os
+import re
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
+from PIL import Image, ImageOps
 from google import genai
 from google.genai import types
 
@@ -111,38 +114,53 @@ COMIC_ANALYSIS_PROMPT = """你是一位漫画分镜师和生活故事策展人�
 请只输出 JSON 数组。"""
 
 
-def _load_image_bytes(path: str) -> Tuple[bytes, str]:
-    with open(path, "rb") as f:
-        data = f.read()
-    ext = os.path.splitext(path)[1].lower()
-    mime = {".png": "image/png", ".webp": "image/webp"}.get(ext, "image/jpeg")
-    return data, mime
-
-
-def _resize_if_needed(path: str, max_pixels: int = 1200 * 1200) -> str:
+def _fix_orientation(img: Image.Image) -> Image.Image:
+    """Apply EXIF orientation tag — fixes rotated/flipped photos."""
     try:
-        from PIL import Image
-        img = Image.open(path)
-        w, h = img.size
-        if w * h <= max_pixels:
-            return path
-        ratio = math.sqrt(max_pixels / (w * h))
-        new_w, new_h = int(w * ratio), int(h * ratio)
-        img = img.resize((new_w, new_h), Image.LANCZOS)
-        tmp = path + ".resized.jpg"
-        img.save(tmp, "JPEG", quality=80)
-        return tmp
+        img = ImageOps.exif_transpose(img)
     except Exception:
-        return path
+        pass
+    return img
+
+
+def _load_image_bytes_fixed(path: str, max_pixels: int = 1200 * 1200) -> Tuple[bytes, str]:
+    """Load image with EXIF orientation fix, resize, return JPEG bytes."""
+    import io
+    img = Image.open(path)
+    img = _fix_orientation(img)
+    if img.mode in ("RGBA", "P", "LA"):
+        img = img.convert("RGB")
+    w, h = img.size
+    if w * h > max_pixels:
+        ratio = math.sqrt(max_pixels / (w * h))
+        img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=80)
+    return buf.getvalue(), "image/jpeg"
+
+
+def extract_photo_date(path: str) -> str | None:
+    """Extract photo date from EXIF or filename."""
+    try:
+        img = Image.open(path)
+        exif = img.getexif()
+        ifd = exif.get_ifd(0x8769)
+        dt_str = ifd.get(36867, "") or ifd.get(36868, "") or exif.get(306, "")
+        if dt_str:
+            dt = datetime.strptime(dt_str[:19], "%Y:%m:%d %H:%M:%S")
+            return dt.strftime("%Y年%m月%d日")
+    except Exception:
+        pass
+    m = re.search(r"(\d{4})(\d{2})(\d{2})", os.path.basename(path))
+    if m:
+        return f"{m.group(1)}年{m.group(2)}月{m.group(3)}日"
+    return None
 
 
 def analyze_batch(client, model: str, image_paths: List[str]) -> List[dict]:
     parts: list[types.Part] = []
-    resized = []
     for p in image_paths:
-        rp = _resize_if_needed(p)
-        resized.append(rp)
-        data, mime = _load_image_bytes(rp)
+        data, mime = _load_image_bytes_fixed(p)
         parts.append(types.Part.from_bytes(data=data, mime_type=mime))
 
     parts.append(types.Part.from_text(text=COMIC_ANALYSIS_PROMPT))
@@ -156,10 +174,6 @@ def analyze_batch(client, model: str, image_paths: List[str]) -> List[dict]:
     except Exception as e:
         print(f"  [WARN] Batch analysis failed: {e}")
         return []
-    finally:
-        for i, rp in enumerate(resized):
-            if rp != image_paths[i] and os.path.exists(rp):
-                os.remove(rp)
 
     text = ""
     for part in response.candidates[0].content.parts:

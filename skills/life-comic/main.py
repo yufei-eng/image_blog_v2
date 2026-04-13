@@ -20,7 +20,7 @@ import sys
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 
-from image_analyzer import analyze_photos, select_comic_panels, ComicMoment
+from image_analyzer import analyze_photos, select_comic_panels, ComicMoment, extract_photo_date
 from comic_generator import generate_storyboard, generate_comic_image
 from html_renderer import render_comic_html
 
@@ -97,9 +97,17 @@ def main():
             json.dump({"all": all_dicts, "selected": selected_dicts}, f, ensure_ascii=False, indent=2)
         print(f"  Analysis saved to {args.save_analysis}")
 
+    # Auto-detect date from photos if not provided
+    date_str = args.date
+    if not date_str:
+        for p in image_paths:
+            date_str = extract_photo_date(p)
+            if date_str:
+                break
+
     # Step 4: Generate storyboard
     print(f"\n[4/5] Generating storyboard and narrative...")
-    storyboard = generate_storyboard(selected_dicts, date_str=args.date)
+    storyboard = generate_storyboard(selected_dicts, date_str=date_str)
     print(f"  Theme: {storyboard.get('theme', '?')}")
     print(f"  Title: {storyboard.get('narrative', {}).get('title', '?')}")
     print(f"  Panels: {len(storyboard.get('panels', []))}")
