@@ -135,9 +135,7 @@ Or re-run the install command — it detects existing installations and pulls la
 │       ├── png_renderer.py
 │       ├── config.json.example
 │       └── requirements.txt
-└── report/
-    ├── project_report.html     # v0.1 test report
-    └── release_note_v0.2.md    # v0.2 changelog
+└── .gitignore
 ```
 
 ## Dependencies
