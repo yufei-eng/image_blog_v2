@@ -20,8 +20,15 @@ After delivering the comic, proactively suggest:
 
 ## Usage
 
+The `main.py` script lives in the same directory as this SKILL.md. Use the directory where this file is located:
+
 ```bash
-python3 ~/.claude/skills/life-comic/main.py <image_dir_or_files> \
+# The agent should resolve the path to this skill's directory automatically.
+# Common locations after install.sh:
+#   ~/.claude/skills/life-comic/main.py   (Claude Code)
+#   ~/.cursor/skills/life-comic/main.py   (Cursor)
+
+python3 <SKILL_DIR>/main.py <image_dir_or_files> \
     [--panels 6] \
     [--output comic.html] \
     [--date 2026-04-13] \

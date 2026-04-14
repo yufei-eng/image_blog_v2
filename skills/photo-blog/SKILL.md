@@ -20,8 +20,15 @@ After delivering the blog, proactively suggest:
 
 ## Usage
 
+The `main.py` script lives in the same directory as this SKILL.md. Use the directory where this file is located:
+
 ```bash
-python3 ~/.claude/skills/photo-blog/main.py <image_dir_or_files> \
+# The agent should resolve the path to this skill's directory automatically.
+# Common locations after install.sh:
+#   ~/.claude/skills/photo-blog/main.py   (Claude Code)
+#   ~/.cursor/skills/photo-blog/main.py   (Cursor)
+
+python3 <SKILL_DIR>/main.py <image_dir_or_files> \
     [--max-highlights 9] \
     [--output blog.html] \
     [--date 2026-04-13] \
