@@ -126,11 +126,12 @@ def main():
     output_base = os.path.splitext(args.output)[0]
 
     generated_files = {}
+    html_output = None
 
     if args.format in ("html", "all"):
-        html_path = render_blog_html(blog_content, highlight_paths, args.output)
-        generated_files["html"] = html_path
-        print(f"\n  [HTML] {html_path}")
+        html_output = render_blog_html(blog_content, highlight_paths, args.output)
+        generated_files["html"] = html_output
+        print(f"\n  [HTML] {html_output}")
 
     if args.format in ("richtext", "all"):
         from richtext_renderer import render_blog_richtext
@@ -142,7 +143,9 @@ def main():
     if args.format in ("png", "all"):
         from png_renderer import render_blog_png
         png_path = output_base + ".png"
-        render_blog_png(blog_content, highlight_paths, png_path)
+        if not html_output:
+            html_output = render_blog_html(blog_content, highlight_paths, output_base + "_tmp.html")
+        render_blog_png(blog_content, highlight_paths, png_path, html_path=html_output)
         generated_files["png"] = png_path
         print(f"  [PNG] {png_path}")
 

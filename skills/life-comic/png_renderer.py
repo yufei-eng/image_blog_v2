@@ -1,134 +1,126 @@
-"""PNG composite renderer for Life Comic.
+"""PNG renderer for Life Comic — screenshots the HTML output via headless browser.
 
-Creates a single shareable high-DPI PNG image combining the generated comic, narrative, and metadata.
-Uses 2x scale factor for crisp rendering on Retina / high-DPI displays.
+Uses Playwright (Chromium) to take a full-page, 2x HiDPI screenshot of the
+rendered HTML, producing a pixel-perfect long image identical to what the user
+sees when opening the HTML in a browser.
+
+Fallback: if Playwright is unavailable, falls back to Pillow-based composite.
 """
 
 import os
 from typing import Optional
-from PIL import Image, ImageDraw, ImageFont, ImageOps
-
-SCALE = 2
-CANVAS_W = 1080 * SCALE
-CARD_PADDING = 40 * SCALE
-BG_COLOR = (255, 252, 248)
-TEXT_COLOR = (50, 50, 50)
-ACCENT_COLOR = (140, 90, 160)
-SUBTITLE_COLOR = (120, 120, 120)
-DATE_COLOR = (150, 150, 150)
 
 
-def _load_font(size: int) -> ImageFont.FreeTypeFont:
-    font_paths = [
-        "/System/Library/Fonts/PingFang.ttc",
-        "/System/Library/Fonts/Helvetica.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/TTF/DejaVuSans.ttf",
-    ]
-    for fp in font_paths:
-        if os.path.exists(fp):
-            try:
-                return ImageFont.truetype(fp, size * SCALE)
-            except Exception:
-                continue
-    return ImageFont.load_default()
+def _screenshot_html(html_path: str, png_path: str, width: int = 1080, scale: int = 2) -> bool:
+    """Take a full-page screenshot of an HTML file via Playwright. Returns True on success."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return False
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_page(
+                viewport={"width": width, "height": 800},
+                device_scale_factor=scale,
+            )
+            page.goto(f"file://{os.path.abspath(html_path)}")
+            page.wait_for_timeout(800)
+            page.screenshot(path=png_path, full_page=True)
+            browser.close()
+        return os.path.exists(png_path)
+    except Exception as e:
+        print(f"  [WARN] Playwright screenshot failed: {e}")
+        return False
 
 
-def _wrap_text(draw: ImageDraw.Draw, text: str, font: ImageFont.FreeTypeFont, max_w: int) -> list[str]:
-    lines, cur = [], ""
-    for ch in text:
-        test = cur + ch
-        bbox = draw.textbbox((0, 0), test, font=font)
-        if (bbox[2] - bbox[0]) > max_w:
-            if cur:
-                lines.append(cur)
-            cur = ch
-        else:
-            cur = test
-    if cur:
-        lines.append(cur)
-    return lines
+def _fallback_composite(storyboard: dict, comic_image_path: Optional[str], png_path: str) -> str:
+    """Pillow-based fallback when Playwright is not available."""
+    from PIL import Image, ImageDraw, ImageFont, ImageOps
 
+    SCALE = 2
+    CANVAS_W = 1080 * SCALE
+    PAD = 40 * SCALE
+    BG = (255, 252, 248)
+    TEXT_C = (50, 50, 50)
+    ACCENT = (140, 90, 160)
 
-def _s(val: int) -> int:
-    return val * SCALE
+    def _font(size):
+        for fp in ["/System/Library/Fonts/PingFang.ttc", "/System/Library/Fonts/Helvetica.ttc",
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]:
+            if os.path.exists(fp):
+                try:
+                    return ImageFont.truetype(fp, size * SCALE)
+                except Exception:
+                    continue
+        return ImageFont.load_default()
 
+    def _wrap(draw, text, font, max_w):
+        lines, cur = [], ""
+        for ch in text:
+            if draw.textbbox((0, 0), cur + ch, font=font)[2] > max_w:
+                if cur: lines.append(cur)
+                cur = ch
+            else:
+                cur += ch
+        if cur: lines.append(cur)
+        return lines
 
-def _ensure_canvas(canvas: Image.Image, draw: ImageDraw.Draw, y: int, extra: int) -> tuple[Image.Image, ImageDraw.Draw]:
-    if y + extra > canvas.height - CARD_PADDING:
-        new_h = canvas.height + max(extra + CARD_PADDING * 2, _s(600))
-        new_canvas = Image.new("RGB", (CANVAS_W, new_h), BG_COLOR)
-        new_canvas.paste(canvas, (0, 0))
-        return new_canvas, ImageDraw.Draw(new_canvas)
-    return canvas, draw
+    narrative = storyboard.get("narrative", {})
+    title = narrative.get("title", storyboard.get("theme", "Life Comic"))
+    body = narrative.get("body", "")
+    content_w = CANVAS_W - 2 * PAD
+
+    tf, bf = _font(48), _font(22)
+    canvas = Image.new("RGB", (CANVAS_W, 4000), BG)
+    draw = ImageDraw.Draw(canvas)
+    y = PAD
+
+    for tl in _wrap(draw, title, tf, content_w):
+        draw.text((PAD, y), tl, fill=ACCENT, font=tf)
+        y += 55 * SCALE
+    y += 20 * SCALE
+
+    if comic_image_path and os.path.exists(comic_image_path):
+        ci = ImageOps.exif_transpose(Image.open(comic_image_path))
+        if ci.mode != "RGB": ci = ci.convert("RGB")
+        ratio = content_w / ci.width
+        ch = int(ci.height * ratio)
+        ci = ci.resize((content_w, ch), Image.LANCZOS)
+        canvas.paste(ci, (PAD, y))
+        y += ch + 20 * SCALE
+
+    if body:
+        for ln in _wrap(draw, body, bf, content_w):
+            if y + 30 * SCALE > canvas.height - PAD:
+                nc = Image.new("RGB", (CANVAS_W, canvas.height + 2000), BG)
+                nc.paste(canvas, (0, 0))
+                canvas, draw = nc, ImageDraw.Draw(nc)
+            draw.text((PAD, y), ln, fill=TEXT_C, font=bf)
+            y += 30 * SCALE
+        y += 20 * SCALE
+
+    canvas = canvas.crop((0, 0, CANVAS_W, y + PAD))
+    os.makedirs(os.path.dirname(png_path) or ".", exist_ok=True)
+    canvas.save(png_path, "PNG")
+    return png_path
 
 
 def render_comic_png(
     storyboard: dict,
     comic_image_path: Optional[str],
-    reference_paths: list[str],
+    reference_paths: list,
     output_path: str,
+    html_path: str = None,
 ) -> str:
-    """Render comic as a single high-DPI composite PNG. Returns output path."""
-    theme = storyboard.get("theme", "Life Comic")
-    narrative = storyboard.get("narrative", {})
-    title = narrative.get("title", theme)
-    body = narrative.get("body", "")
-    footer_date = storyboard.get("footer_date", "")
-
-    title_font = _load_font(48)
-    body_font = _load_font(22)
-    small_font = _load_font(18)
-    content_w = CANVAS_W - 2 * CARD_PADDING
-
-    line_h_title = _s(55)
-    line_h_body = _s(30)
-    line_h_small = _s(24)
-
-    comic_img = None
-    comic_h = 0
-    if comic_image_path and os.path.exists(comic_image_path):
-        comic_img = Image.open(comic_image_path)
-        comic_img = ImageOps.exif_transpose(comic_img)
-        if comic_img.mode != "RGB":
-            comic_img = comic_img.convert("RGB")
-        ratio = content_w / comic_img.width
-        comic_h = int(comic_img.height * ratio)
-        comic_img = comic_img.resize((content_w, comic_h), Image.LANCZOS)
-
-    estimated_h = CARD_PADDING + line_h_title * 2 + _s(40) + comic_h + _s(40) + _s(600) + CARD_PADDING
-    canvas = Image.new("RGB", (CANVAS_W, max(estimated_h, _s(600))), BG_COLOR)
-    draw = ImageDraw.Draw(canvas)
-    y = CARD_PADDING
-
-    for tl in _wrap_text(draw, title, title_font, content_w):
-        draw.text((CARD_PADDING, y), tl, fill=ACCENT_COLOR, font=title_font)
-        y += line_h_title
-    y += _s(6)
-
-    draw.text((CARD_PADDING, y), theme, fill=SUBTITLE_COLOR, font=small_font)
-    y += line_h_small + _s(10)
-
-    if comic_img:
-        canvas.paste(comic_img, (CARD_PADDING, y))
-        y += comic_h + _s(20)
-
-    draw.line([(CARD_PADDING, y), (CANVAS_W - CARD_PADDING, y)], fill=ACCENT_COLOR, width=SCALE * 2)
-    y += _s(20)
-
-    if body:
-        for ln in _wrap_text(draw, body, body_font, content_w):
-            canvas, draw = _ensure_canvas(canvas, draw, y, line_h_body)
-            draw.text((CARD_PADDING, y), ln, fill=TEXT_COLOR, font=body_font)
-            y += line_h_body
-        y += _s(20)
-
-    if footer_date:
-        canvas, draw = _ensure_canvas(canvas, draw, y, line_h_small + _s(40))
-        draw.text((CARD_PADDING, y), footer_date, fill=DATE_COLOR, font=small_font)
-        y += _s(40)
-
-    canvas = canvas.crop((0, 0, CANVAS_W, min(y + CARD_PADDING, canvas.height)))
+    """Render comic as PNG. Uses HTML screenshot if available, otherwise Pillow fallback."""
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    canvas.save(output_path, "PNG")
+
+    if html_path and os.path.exists(html_path):
+        if _screenshot_html(html_path, output_path):
+            return output_path
+        print("  [INFO] Falling back to Pillow composite")
+
+    _fallback_composite(storyboard, comic_image_path, output_path)
     return output_path

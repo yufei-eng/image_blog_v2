@@ -1,169 +1,135 @@
-"""PNG composite renderer for Photo Blog.
+"""PNG renderer for Photo Blog — screenshots the HTML output via headless browser.
 
-Creates a single shareable high-DPI PNG image combining title, photos, and text.
-Uses 2x scale factor for crisp rendering on Retina / high-DPI displays.
+Uses Playwright (Chromium) to take a full-page, 2x HiDPI screenshot of the
+rendered HTML, producing a pixel-perfect long image identical to what the user
+sees when opening the HTML in a browser.
+
+Fallback: if Playwright is unavailable, falls back to Pillow-based composite.
 """
 
 import os
-from PIL import Image, ImageDraw, ImageFont, ImageOps
-
-SCALE = 2
-CANVAS_W = 1080 * SCALE
-CARD_PADDING = 40 * SCALE
-PHOTO_SPACING = 16 * SCALE
-BG_COLOR = (255, 252, 248)
-TEXT_COLOR = (50, 50, 50)
-ACCENT_COLOR = (180, 120, 70)
-SUBTITLE_COLOR = (120, 120, 120)
-DATE_COLOR = (150, 150, 150)
+import subprocess
+import sys
 
 
-def _load_font(size: int) -> ImageFont.FreeTypeFont:
-    font_paths = [
-        "/System/Library/Fonts/PingFang.ttc",
-        "/System/Library/Fonts/Helvetica.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/TTF/DejaVuSans.ttf",
-    ]
-    for fp in font_paths:
-        if os.path.exists(fp):
-            try:
-                return ImageFont.truetype(fp, size * SCALE)
-            except Exception:
-                continue
-    return ImageFont.load_default()
+def _screenshot_html(html_path: str, png_path: str, width: int = 1080, scale: int = 2) -> bool:
+    """Take a full-page screenshot of an HTML file via Playwright. Returns True on success."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return False
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_page(
+                viewport={"width": width, "height": 800},
+                device_scale_factor=scale,
+            )
+            page.goto(f"file://{os.path.abspath(html_path)}")
+            page.wait_for_timeout(800)
+            page.screenshot(path=png_path, full_page=True)
+            browser.close()
+        return os.path.exists(png_path)
+    except Exception as e:
+        print(f"  [WARN] Playwright screenshot failed: {e}")
+        return False
 
 
-def _fit_photo(path: str, target_w: int, target_h: int) -> Image.Image:
-    img = Image.open(path)
-    img = ImageOps.exif_transpose(img)
-    if img.mode != "RGB":
-        img = img.convert("RGB")
-    img = ImageOps.fit(img, (target_w, target_h), Image.LANCZOS)
-    return img
+def _fallback_composite(blog_content: dict, highlight_paths: list, png_path: str) -> str:
+    """Pillow-based fallback when Playwright is not available."""
+    from PIL import Image, ImageDraw, ImageFont, ImageOps
 
+    SCALE = 2
+    CANVAS_W = 1080 * SCALE
+    PAD = 40 * SCALE
+    BG = (255, 252, 248)
+    TEXT_C = (50, 50, 50)
+    ACCENT = (180, 120, 70)
 
-def _wrap_text(draw: ImageDraw.Draw, text: str, font: ImageFont.FreeTypeFont, max_w: int) -> list[str]:
-    lines, cur = [], ""
-    for ch in text:
-        test = cur + ch
-        bbox = draw.textbbox((0, 0), test, font=font)
-        if (bbox[2] - bbox[0]) > max_w:
-            if cur:
-                lines.append(cur)
-            cur = ch
-        else:
-            cur = test
-    if cur:
-        lines.append(cur)
-    return lines
+    def _font(size):
+        for fp in ["/System/Library/Fonts/PingFang.ttc", "/System/Library/Fonts/Helvetica.ttc",
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]:
+            if os.path.exists(fp):
+                try:
+                    return ImageFont.truetype(fp, size * SCALE)
+                except Exception:
+                    continue
+        return ImageFont.load_default()
 
+    def _wrap(draw, text, font, max_w):
+        lines, cur = [], ""
+        for ch in text:
+            if draw.textbbox((0, 0), cur + ch, font=font)[2] > max_w:
+                if cur: lines.append(cur)
+                cur = ch
+            else:
+                cur += ch
+        if cur: lines.append(cur)
+        return lines
 
-def _s(val: int) -> int:
-    """Scale a logical pixel value."""
-    return val * SCALE
-
-
-def _ensure_canvas(canvas: Image.Image, draw: ImageDraw.Draw, y: int, extra: int) -> tuple[Image.Image, ImageDraw.Draw]:
-    """Extend canvas height if needed."""
-    if y + extra > canvas.height - CARD_PADDING:
-        new_h = canvas.height + max(extra + CARD_PADDING * 2, _s(600))
-        new_canvas = Image.new("RGB", (CANVAS_W, new_h), BG_COLOR)
-        new_canvas.paste(canvas, (0, 0))
-        return new_canvas, ImageDraw.Draw(new_canvas)
-    return canvas, draw
-
-
-def render_blog_png(blog_content: dict, highlight_paths: list[str], output_path: str) -> str:
-    """Render blog as a single high-DPI composite PNG."""
     title = blog_content.get("title", "Photo Blog")
     desc = blog_content.get("description", {}).get("text", "")
     insights = blog_content.get("insights", [])
-    footer_date = blog_content.get("footer_date", "")
+    content_w = CANVAS_W - 2 * PAD
 
-    title_font = _load_font(48)
-    body_font = _load_font(24)
-    small_font = _load_font(18)
-
-    content_w = CANVAS_W - 2 * CARD_PADDING
-    n_photos = len(highlight_paths)
-
-    if n_photos <= 1:
-        cols = 1
-    elif n_photos <= 4:
-        cols = 2
-    else:
-        cols = 3
-
-    photo_w = (content_w - (cols - 1) * PHOTO_SPACING) // cols
-    photo_h = int(photo_w * 0.75)
-    n_rows = (n_photos + cols - 1) // cols
-    photos_block_h = n_rows * photo_h + (n_rows - 1) * PHOTO_SPACING
-
-    line_h_title = _s(55)
-    line_h_body = _s(32)
-    line_h_small = _s(24)
-
-    estimated_h = (
-        CARD_PADDING + line_h_title * 2
-        + _s(20)
-        + line_h_body * 6
-        + _s(20)
-        + photos_block_h
-        + _s(40)
-        + len(insights) * line_h_body * 4
-        + _s(80)
-        + CARD_PADDING
-    )
-
-    canvas = Image.new("RGB", (CANVAS_W, max(estimated_h, _s(600))), BG_COLOR)
+    tf, bf = _font(48), _font(24)
+    canvas = Image.new("RGB", (CANVAS_W, 4000), BG)
     draw = ImageDraw.Draw(canvas)
-    y = CARD_PADDING
+    y = PAD
 
-    title_lines = _wrap_text(draw, title, title_font, content_w)
-    for tl in title_lines:
-        draw.text((CARD_PADDING, y), tl, fill=ACCENT_COLOR, font=title_font)
-        y += line_h_title
-    y += _s(6)
-    draw.line([(CARD_PADDING, y), (CANVAS_W - CARD_PADDING, y)], fill=ACCENT_COLOR, width=SCALE * 2)
-    y += _s(20)
+    for tl in _wrap(draw, title, tf, content_w):
+        draw.text((PAD, y), tl, fill=ACCENT, font=tf)
+        y += 55 * SCALE
+    y += 20 * SCALE
 
     if desc:
-        desc_lines = _wrap_text(draw, desc, body_font, content_w)
-        for dl in desc_lines:
-            draw.text((CARD_PADDING, y), dl, fill=TEXT_COLOR, font=body_font)
-            y += line_h_body
-        y += _s(24)
+        for dl in _wrap(draw, desc, bf, content_w):
+            draw.text((PAD, y), dl, fill=TEXT_C, font=bf)
+            y += 32 * SCALE
+        y += 20 * SCALE
 
+    n = len(highlight_paths)
+    cols = 1 if n <= 1 else (2 if n <= 4 else 3)
+    pw = (content_w - (cols - 1) * 16 * SCALE) // cols
+    ph = int(pw * 0.75)
     for idx, path in enumerate(highlight_paths):
-        row, col = divmod(idx, cols)
-        px = CARD_PADDING + col * (photo_w + PHOTO_SPACING)
-        py = y + row * (photo_h + PHOTO_SPACING)
+        r, c = divmod(idx, cols)
+        px = PAD + c * (pw + 16 * SCALE)
+        py = y + r * (ph + 16 * SCALE)
         try:
-            photo = _fit_photo(path, photo_w, photo_h)
-            canvas.paste(photo, (px, py))
+            img = ImageOps.exif_transpose(Image.open(path))
+            if img.mode != "RGB": img = img.convert("RGB")
+            canvas.paste(ImageOps.fit(img, (pw, ph), Image.LANCZOS), (px, py))
         except Exception:
-            draw.rectangle([(px, py), (px + photo_w, py + photo_h)], fill=(220, 220, 220))
-
-    y += photos_block_h + _s(30)
+            pass
+    rows = (n + cols - 1) // cols
+    y += rows * ph + (rows - 1) * 16 * SCALE + 30 * SCALE
 
     for i, ins in enumerate(insights):
-        text = ins.get("text", "")
-        lines = _wrap_text(draw, f"{i+1}. {text}", body_font, content_w)
-        for ln in lines:
-            canvas, draw = _ensure_canvas(canvas, draw, y, line_h_body)
-            draw.text((CARD_PADDING, y), ln, fill=TEXT_COLOR, font=body_font)
-            y += line_h_body
-        y += _s(12)
+        for ln in _wrap(draw, f"{i+1}. {ins.get('text', '')}", bf, content_w):
+            if y + 32 * SCALE > canvas.height - PAD:
+                nc = Image.new("RGB", (CANVAS_W, canvas.height + 2000), BG)
+                nc.paste(canvas, (0, 0))
+                canvas, draw = nc, ImageDraw.Draw(nc)
+            draw.text((PAD, y), ln, fill=TEXT_C, font=bf)
+            y += 32 * SCALE
+        y += 12 * SCALE
 
-    if footer_date:
-        y += _s(20)
-        canvas, draw = _ensure_canvas(canvas, draw, y, line_h_small + _s(40))
-        draw.text((CARD_PADDING, y), footer_date, fill=DATE_COLOR, font=small_font)
-        y += _s(40)
+    canvas = canvas.crop((0, 0, CANVAS_W, y + PAD))
+    os.makedirs(os.path.dirname(png_path) or ".", exist_ok=True)
+    canvas.save(png_path, "PNG")
+    return png_path
 
-    canvas = canvas.crop((0, 0, CANVAS_W, min(y + CARD_PADDING, canvas.height)))
 
+def render_blog_png(blog_content: dict, highlight_paths: list, output_path: str, html_path: str = None) -> str:
+    """Render blog as PNG. Uses HTML screenshot if available, otherwise Pillow fallback."""
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    canvas.save(output_path, "PNG")
+
+    if html_path and os.path.exists(html_path):
+        if _screenshot_html(html_path, output_path):
+            return output_path
+        print("  [INFO] Falling back to Pillow composite")
+
+    _fallback_composite(blog_content, highlight_paths, output_path)
     return output_path
