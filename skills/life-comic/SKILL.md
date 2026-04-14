@@ -1,9 +1,17 @@
 ---
 name: life-comic
-description: Life comic generator. Analyze photos with Gemini 3 Pro for comic-worthy moments, design storyboard with emotional narrative, generate warm hand-drawn illustration style multi-panel comic via Gemini 3.1 Flash Image. Supports 1-9 panels with adaptive grid layout, theme/style keywords, and triple output (HTML, rich text, PNG). Triggers when users request comic strip, manga, illustrated story, visual diary, or comic-style summary from photos.
+description: >-
+  Life comic generator. Analyze photos with Gemini 3 Pro for comic-worthy moments,
+  design storyboard with emotional narrative, generate warm hand-drawn illustration
+  style multi-panel comic via Gemini 3.1 Flash Image. Supports 1-9 panels with
+  adaptive grid layout, theme/style keywords, and triple output (HTML, rich text, PNG).
+  Triggers when users request comic strip, manga, illustrated story, visual diary,
+  or comic-style summary from photos.
 argument-hint: <image_directory_or_file>
 metadata:
   execution_mode: sandbox
+  adk_additional_tools:
+    - imagen_generate
 ---
 
 # Life Comic Generator
