@@ -1,3 +1,11 @@
+---
+name: photo-blog
+description: Photo blog generator. Analyze photos with Gemini 3 Pro, score and select highlights with diversity optimization, generate narrative-driven blog with poetic title, scene insights, and tips. Supports 1-9 images, theme/style keywords, and triple output (HTML, rich text, PNG). Triggers when users request photo blog, life summary, travel log, photo diary, or visual story from images.
+argument-hint: <image_directory_or_file>
+metadata:
+  execution_mode: sandbox
+---
+
 # Photo Blog Generator
 
 Generate a beautiful, narrative-driven photo blog from a set of images. Analyzes photos using Gemini 3 Pro for scene understanding, selects highlights with diversity optimization, and produces a styled blog with title, narrative, insights, and practical tips.
