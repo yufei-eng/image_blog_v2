@@ -1,17 +1,21 @@
 """PNG composite renderer for Photo Blog.
 
-Creates a single shareable PNG image combining title, photos, and text.
+Creates a single shareable high-DPI PNG image combining title, photos, and text.
+Uses 2x scale factor for crisp rendering on Retina / high-DPI displays.
 """
 
 import os
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-CANVAS_W = 1080
-CARD_PADDING = 40
-PHOTO_SPACING = 16
+SCALE = 2
+CANVAS_W = 1080 * SCALE
+CARD_PADDING = 40 * SCALE
+PHOTO_SPACING = 16 * SCALE
 BG_COLOR = (255, 252, 248)
 TEXT_COLOR = (50, 50, 50)
 ACCENT_COLOR = (180, 120, 70)
+SUBTITLE_COLOR = (120, 120, 120)
+DATE_COLOR = (150, 150, 150)
 
 
 def _load_font(size: int) -> ImageFont.FreeTypeFont:
@@ -24,7 +28,7 @@ def _load_font(size: int) -> ImageFont.FreeTypeFont:
     for fp in font_paths:
         if os.path.exists(fp):
             try:
-                return ImageFont.truetype(fp, size)
+                return ImageFont.truetype(fp, size * SCALE)
             except Exception:
                 continue
     return ImageFont.load_default()
@@ -40,9 +44,8 @@ def _fit_photo(path: str, target_w: int, target_h: int) -> Image.Image:
 
 
 def _wrap_text(draw: ImageDraw.Draw, text: str, font: ImageFont.FreeTypeFont, max_w: int) -> list[str]:
-    words = list(text)
     lines, cur = [], ""
-    for ch in words:
+    for ch in text:
         test = cur + ch
         bbox = draw.textbbox((0, 0), test, font=font)
         if (bbox[2] - bbox[0]) > max_w:
@@ -56,8 +59,23 @@ def _wrap_text(draw: ImageDraw.Draw, text: str, font: ImageFont.FreeTypeFont, ma
     return lines
 
 
+def _s(val: int) -> int:
+    """Scale a logical pixel value."""
+    return val * SCALE
+
+
+def _ensure_canvas(canvas: Image.Image, draw: ImageDraw.Draw, y: int, extra: int) -> tuple[Image.Image, ImageDraw.Draw]:
+    """Extend canvas height if needed."""
+    if y + extra > canvas.height - CARD_PADDING:
+        new_h = canvas.height + max(extra + CARD_PADDING * 2, _s(600))
+        new_canvas = Image.new("RGB", (CANVAS_W, new_h), BG_COLOR)
+        new_canvas.paste(canvas, (0, 0))
+        return new_canvas, ImageDraw.Draw(new_canvas)
+    return canvas, draw
+
+
 def render_blog_png(blog_content: dict, highlight_paths: list[str], output_path: str) -> str:
-    """Render blog as a single composite PNG."""
+    """Render blog as a single high-DPI composite PNG."""
     title = blog_content.get("title", "Photo Blog")
     desc = blog_content.get("description", {}).get("text", "")
     insights = blog_content.get("insights", [])
@@ -79,36 +97,43 @@ def render_blog_png(blog_content: dict, highlight_paths: list[str], output_path:
 
     photo_w = (content_w - (cols - 1) * PHOTO_SPACING) // cols
     photo_h = int(photo_w * 0.75)
-    rows = (n_photos + cols - 1) // cols
-    photos_block_h = rows * photo_h + (rows - 1) * PHOTO_SPACING
+    n_rows = (n_photos + cols - 1) // cols
+    photos_block_h = n_rows * photo_h + (n_rows - 1) * PHOTO_SPACING
+
+    line_h_title = _s(55)
+    line_h_body = _s(32)
+    line_h_small = _s(24)
 
     estimated_h = (
-        CARD_PADDING + 80
-        + 60
+        CARD_PADDING + line_h_title * 2
+        + _s(20)
+        + line_h_body * 6
+        + _s(20)
         + photos_block_h
-        + 40
-        + len(insights) * 70
-        + 80
+        + _s(40)
+        + len(insights) * line_h_body * 4
+        + _s(80)
         + CARD_PADDING
     )
 
-    canvas = Image.new("RGB", (CANVAS_W, max(estimated_h, 600)), BG_COLOR)
+    canvas = Image.new("RGB", (CANVAS_W, max(estimated_h, _s(600))), BG_COLOR)
     draw = ImageDraw.Draw(canvas)
     y = CARD_PADDING
 
-    draw.line([(CARD_PADDING, y + 60), (CANVAS_W - CARD_PADDING, y + 60)], fill=ACCENT_COLOR, width=2)
     title_lines = _wrap_text(draw, title, title_font, content_w)
     for tl in title_lines:
         draw.text((CARD_PADDING, y), tl, fill=ACCENT_COLOR, font=title_font)
-        y += 55
-    y += 20
+        y += line_h_title
+    y += _s(6)
+    draw.line([(CARD_PADDING, y), (CANVAS_W - CARD_PADDING, y)], fill=ACCENT_COLOR, width=SCALE * 2)
+    y += _s(20)
 
     if desc:
         desc_lines = _wrap_text(draw, desc, body_font, content_w)
         for dl in desc_lines:
             draw.text((CARD_PADDING, y), dl, fill=TEXT_COLOR, font=body_font)
-            y += 30
-        y += 20
+            y += line_h_body
+        y += _s(24)
 
     for idx, path in enumerate(highlight_paths):
         row, col = divmod(idx, cols)
@@ -120,25 +145,22 @@ def render_blog_png(blog_content: dict, highlight_paths: list[str], output_path:
         except Exception:
             draw.rectangle([(px, py), (px + photo_w, py + photo_h)], fill=(220, 220, 220))
 
-    y += photos_block_h + 30
+    y += photos_block_h + _s(30)
 
     for i, ins in enumerate(insights):
         text = ins.get("text", "")
         lines = _wrap_text(draw, f"{i+1}. {text}", body_font, content_w)
         for ln in lines:
-            if y + 30 > canvas.height - CARD_PADDING:
-                new_canvas = Image.new("RGB", (CANVAS_W, canvas.height + 600), BG_COLOR)
-                new_canvas.paste(canvas, (0, 0))
-                canvas = new_canvas
-                draw = ImageDraw.Draw(canvas)
+            canvas, draw = _ensure_canvas(canvas, draw, y, line_h_body)
             draw.text((CARD_PADDING, y), ln, fill=TEXT_COLOR, font=body_font)
-            y += 30
-        y += 10
+            y += line_h_body
+        y += _s(12)
 
     if footer_date:
-        y += 20
-        draw.text((CARD_PADDING, y), footer_date, fill=(150, 150, 150), font=small_font)
-        y += 40
+        y += _s(20)
+        canvas, draw = _ensure_canvas(canvas, draw, y, line_h_small + _s(40))
+        draw.text((CARD_PADDING, y), footer_date, fill=DATE_COLOR, font=small_font)
+        y += _s(40)
 
     canvas = canvas.crop((0, 0, CANVAS_W, min(y + CARD_PADDING, canvas.height)))
 
