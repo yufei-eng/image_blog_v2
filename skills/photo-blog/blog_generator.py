@@ -149,7 +149,7 @@ def generate_blog_content(
     lang_instruction = ""
     if lang == "zh":
         lang_instruction = """
-**Language requirement**: The user speaks Chinese. ALL generated text (title, description, insights, tip, suggested_themes) MUST be written in Chinese (简体中文). Use warm, literary Chinese style."""
+**Language requirement**: The user speaks Chinese. ALL generated text (title, description, insights, tip, suggested_themes) MUST be written in Simplified Chinese. Use warm, literary Chinese style."""
     else:
         lang_instruction = """
 **Language requirement**: Write all text in English."""
@@ -207,16 +207,16 @@ def _fallback_content(highlights: List[dict], date_str: str, lang: str = "en") -
     insights = []
     for i, h in enumerate(highlights[:9]):
         insights.append({
-            "text": h.get("narrative_hook", h.get("scene", "精彩瞬间" if lang == "zh" else "A wonderful moment")),
+            "text": h.get("narrative_hook", h.get("scene", "\u7cbe\u5f69\u77ac\u95f4" if lang == "zh" else "A wonderful moment")),
             "image_index": i,
         })
     if lang == "zh":
         return {
-            "title": "今日一瞥",
+            "title": "\u4eca\u65e5\u4e00\u7a25",
             "hero_image_index": 0,
-            "description": {"text": "捕捉生活中的美好瞬间——每一帧都值得珍藏。", "image_index": 0},
+            "description": {"text": "\u6355\u6349\u751f\u6d3b\u4e2d\u7684\u7f8e\u597d\u77ac\u95f4\u2014\u2014\u6bcf\u4e00\u5e27\u90fd\u503c\u5f97\u73cd\u85cf\u3002", "image_index": 0},
             "insights": insights,
-            "tip": "珍惜当下，记录美好——温暖藏在细节里。",
+            "tip": "\u73cd\u60dc\u5f53\u4e0b\uff0c\u8bb0\u5f55\u7f8e\u597d\u2014\u2014\u6e29\u6696\u85cf\u5728\u7ec6\u8282\u91cc\u3002",
             "footer_date": date_str,
             "_lang": lang,
         }

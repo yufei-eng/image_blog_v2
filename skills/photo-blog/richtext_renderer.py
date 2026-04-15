@@ -28,7 +28,7 @@ def _img_to_base64_url(path: str, max_w: int = 600) -> str:
 
 _LABELS = {
     "en": {"tip": "Tip", "other_themes": "Other themes you might like", "default_title": "Photo Blog"},
-    "zh": {"tip": "小提醒", "other_themes": "你可能也喜欢", "default_title": "图文博客"},
+    "zh": {"tip": "\u5c0f\u63d0\u9192", "other_themes": "\u4f60\u53ef\u80fd\u4e5f\u559c\u6b22", "default_title": "\u56fe\u6587\u535a\u5ba2"},
 }
 
 

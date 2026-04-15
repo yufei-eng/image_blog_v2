@@ -30,7 +30,7 @@ def _img_to_base64(path: str, max_width: int = 800) -> str:
 
 _LABELS = {
     "en": {"insights": "Insights", "tips": "Tips", "brand": "Fleeting Thoughts", "default_title": "Today's Glimpse"},
-    "zh": {"insights": "灵感", "tips": "小提醒", "brand": "浮光掠影", "default_title": "今日一瞥"},
+    "zh": {"insights": "\u7075\u611f", "tips": "\u5c0f\u63d0\u9192", "brand": "\u6d6e\u5149\u63a0\u5f71", "default_title": "\u4eca\u65e5\u4e00\u7a25"},
 }
 
 

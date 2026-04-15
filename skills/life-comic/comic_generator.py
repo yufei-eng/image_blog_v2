@@ -152,7 +152,7 @@ def generate_storyboard(panel_moments: List[dict], date_str: Optional[str] = Non
     lang_instruction = ""
     if lang == "zh":
         lang_instruction = """
-**Language requirement**: The user speaks Chinese. ALL generated text (theme, emotional_arc, narrative title/body, emotion_tags, suggested_themes) MUST be written in Chinese (简体中文). Use warm, literary Chinese style. Note: scene_description should remain in English as it is used for image generation prompts."""
+**Language requirement**: The user speaks Chinese. ALL generated text (theme, emotional_arc, narrative title/body, emotion_tags, suggested_themes) MUST be written in Simplified Chinese. Use warm, literary Chinese style. Note: scene_description should remain in English as it is used for image generation prompts."""
     else:
         lang_instruction = """
 **Language requirement**: Write all user-facing text in English. scene_description should also be in English."""
@@ -315,15 +315,15 @@ def _fallback_storyboard(panels: List[dict], date_str: str, lang: str = "en") ->
             "panel_index": i,
             "source_photo_index": i,
             "scene_description": p.get("comic_panel_desc", p.get("scene_summary", "")),
-            "emotion_tag": p.get("emotion", "温暖" if lang == "zh" else "warmth"),
+            "emotion_tag": p.get("emotion", "\u6e29\u6696" if lang == "zh" else "warmth"),
             "panel_composition": "medium shot",
         })
     if lang == "zh":
         return {
-            "theme": "生活碎片",
-            "emotional_arc": "平凡日常中的温柔时刻",
+            "theme": "\u751f\u6d3b\u788e\u7247",
+            "emotional_arc": "\u5e73\u51e1\u65e5\u5e38\u4e2d\u7684\u6e29\u67d4\u65f6\u523b",
             "panels": panel_list,
-            "narrative": {"title": "生活碎片", "body": "每一个平凡的日子里，都有值得珍藏的温柔瞬间。"},
+            "narrative": {"title": "\u751f\u6d3b\u788e\u7247", "body": "\u6bcf\u4e00\u4e2a\u5e73\u51e1\u7684\u65e5\u5b50\u91cc\uff0c\u90fd\u6709\u503c\u5f97\u73cd\u85cf\u7684\u6e29\u67d4\u77ac\u95f4\u3002"},
             "footer_date": date_str,
             "_lang": lang,
         }

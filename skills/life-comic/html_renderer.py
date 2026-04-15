@@ -44,7 +44,7 @@ def render_comic_html(
         Absolute path to generated HTML file
     """
     lang = storyboard.get("_lang", "en")
-    brand = "生活漫画" if lang == "zh" else "Life Comic"
+    brand = "\u751f\u6d3b\u6f2b\u753b" if lang == "zh" else "Life Comic"
     theme = storyboard.get("theme", brand)
     narrative = storyboard.get("narrative", {})
     title = narrative.get("title", f"《{theme}》")
