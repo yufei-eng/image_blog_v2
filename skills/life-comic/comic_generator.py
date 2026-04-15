@@ -67,6 +67,7 @@ STORYBOARD_PROMPT = """You are a warm, heartfelt comic scriptwriter. Based on th
 2. Emotional tone: warm and heartfelt, can be tender or passionate, avoid being overly detached
 3. Comic style: warm hand-drawn illustration, soft but layered colors
 {theme_instruction}
+{lang_instruction}
 
 **Theme creativity requirements (extremely important)**:
 - The theme must be creative and distinctive. Avoid generic clichés
@@ -107,7 +108,15 @@ STORYBOARD_PROMPT = """You are a warm, heartfelt comic scriptwriter. Based on th
 - **suggested_themes**: Always provide 3 alternative theme suggestions based on actual photo content"""
 
 
-def generate_storyboard(panel_moments: List[dict], date_str: Optional[str] = None, user_theme: Optional[str] = None) -> dict:
+def _detect_lang(text: str) -> str:
+    """Detect language from text. Returns 'zh' if CJK characters dominate, else 'en'."""
+    if not text:
+        return "en"
+    cjk = sum(1 for c in text if '\u4e00' <= c <= '\u9fff' or '\u3400' <= c <= '\u4dbf')
+    return "zh" if cjk / max(len(text.replace(" ", "")), 1) > 0.15 else "en"
+
+
+def generate_storyboard(panel_moments: List[dict], date_str: Optional[str] = None, user_theme: Optional[str] = None, lang: Optional[str] = None) -> dict:
     """Generate storyboard script and narrative text."""
     from datetime import date
     if not date_str:
@@ -130,6 +139,9 @@ def generate_storyboard(panel_moments: List[dict], date_str: Optional[str] = Non
             "comic_panel_desc": m.get("comic_panel_desc", ""),
         })
 
+    if lang is None:
+        lang = _detect_lang(user_theme or "")
+
     theme_instruction = ""
     if user_theme:
         theme_instruction = f"""
@@ -137,9 +149,18 @@ def generate_storyboard(panel_moments: List[dict], date_str: Optional[str] = Non
    If fewer than 2 photos match, ignore and use the best theme from actual content.
    Provide helpful alternative themes in suggested_themes."""
 
+    lang_instruction = ""
+    if lang == "zh":
+        lang_instruction = """
+**Language requirement**: The user speaks Chinese. ALL generated text (theme, emotional_arc, narrative title/body, emotion_tags, suggested_themes) MUST be written in Chinese (简体中文). Use warm, literary Chinese style. Note: scene_description should remain in English as it is used for image generation prompts."""
+    else:
+        lang_instruction = """
+**Language requirement**: Write all user-facing text in English. scene_description should also be in English."""
+
     prompt = STORYBOARD_PROMPT.format(
         panels_json=json.dumps(panels_detail, ensure_ascii=False, indent=2),
         theme_instruction=theme_instruction,
+        lang_instruction=lang_instruction,
     )
 
     try:
@@ -150,7 +171,7 @@ def generate_storyboard(panel_moments: List[dict], date_str: Optional[str] = Non
         )
     except Exception as e:
         print(f"ERROR: Storyboard generation failed: {e}")
-        return _fallback_storyboard(panel_moments, date_str)
+        return _fallback_storyboard(panel_moments, date_str, lang)
 
     text = ""
     for part in response.candidates[0].content.parts:
@@ -173,11 +194,12 @@ def generate_storyboard(panel_moments: List[dict], date_str: Optional[str] = Non
             try:
                 sb = json.loads(text[start:end+1])
             except json.JSONDecodeError:
-                return _fallback_storyboard(panel_moments, date_str)
+                return _fallback_storyboard(panel_moments, date_str, lang)
         else:
-            return _fallback_storyboard(panel_moments, date_str)
+            return _fallback_storyboard(panel_moments, date_str, lang)
 
     sb["footer_date"] = date_str
+    sb["_lang"] = lang
     return sb
 
 
@@ -285,7 +307,7 @@ def generate_comic_image(
     return None
 
 
-def _fallback_storyboard(panels: List[dict], date_str: str) -> dict:
+def _fallback_storyboard(panels: List[dict], date_str: str, lang: str = "en") -> dict:
     """Minimal fallback storyboard."""
     panel_list = []
     for i, p in enumerate(panels[:9]):
@@ -293,16 +315,23 @@ def _fallback_storyboard(panels: List[dict], date_str: str) -> dict:
             "panel_index": i,
             "source_photo_index": i,
             "scene_description": p.get("comic_panel_desc", p.get("scene_summary", "")),
-            "emotion_tag": p.get("emotion", "warmth"),
+            "emotion_tag": p.get("emotion", "温暖" if lang == "zh" else "warmth"),
             "panel_composition": "medium shot",
         })
+    if lang == "zh":
+        return {
+            "theme": "生活碎片",
+            "emotional_arc": "平凡日常中的温柔时刻",
+            "panels": panel_list,
+            "narrative": {"title": "生活碎片", "body": "每一个平凡的日子里，都有值得珍藏的温柔瞬间。"},
+            "footer_date": date_str,
+            "_lang": lang,
+        }
     return {
         "theme": "Life Fragments",
         "emotional_arc": "Beauty found in the everyday",
         "panels": panel_list,
-        "narrative": {
-            "title": "Life Fragments",
-            "body": "In every ordinary day, there are gentle moments worth remembering."
-        },
+        "narrative": {"title": "Life Fragments", "body": "In every ordinary day, there are gentle moments worth remembering."},
         "footer_date": date_str,
+        "_lang": lang,
     }

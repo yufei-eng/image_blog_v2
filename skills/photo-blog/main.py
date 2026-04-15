@@ -122,11 +122,18 @@ def main():
             if date_str:
                 break
 
+    def _detect_lang(text):
+        if not text:
+            return "en"
+        cjk = sum(1 for c in text if '\u4e00' <= c <= '\u9fff' or '\u3400' <= c <= '\u4dbf')
+        return "zh" if cjk / max(len(text.replace(" ", "")), 1) > 0.15 else "en"
+
+    lang = _detect_lang(user_theme)
     if user_theme:
-        print(f"\n  Theme: '{user_theme}'")
+        print(f"\n  Theme: '{user_theme}' (lang={lang})")
 
     print(f"\n[4/{total_steps}] Generating blog content...")
-    blog_content = generate_blog_content(all_dicts, highlight_dicts, date_str=date_str, user_theme=user_theme)
+    blog_content = generate_blog_content(all_dicts, highlight_dicts, date_str=date_str, user_theme=user_theme, lang=lang)
     print(f"  Title: {blog_content.get('title', '?')}")
     print(f"  Insights: {len(blog_content.get('insights', []))} items")
 

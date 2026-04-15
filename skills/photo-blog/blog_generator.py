@@ -38,6 +38,7 @@ BLOG_GENERATION_PROMPT = """You are a content creator with both artistic sensibi
 2. Writing style: warm, evocative, with literary flair — avoid dry, chronological recounting
 3. Emphasize emotional resonance — let readers feel the warmth and atmosphere of the scenes
 {theme_instruction}
+{lang_instruction}
 
 **Photo analysis data**:
 {analysis_json}
@@ -77,11 +78,20 @@ BLOG_GENERATION_PROMPT = """You are a content creator with both artistic sensibi
 - **suggested_themes**: Always provide 3 alternative theme suggestions based on actual photo content (short phrases). These help the user explore different angles."""
 
 
+def _detect_lang(text: str) -> str:
+    """Detect language from text. Returns 'zh' if CJK characters dominate, else 'en'."""
+    if not text:
+        return "en"
+    cjk = sum(1 for c in text if '\u4e00' <= c <= '\u9fff' or '\u3400' <= c <= '\u4dbf')
+    return "zh" if cjk / max(len(text.replace(" ", "")), 1) > 0.15 else "en"
+
+
 def generate_blog_content(
     all_analyses: List[dict],
     highlights: List[dict],
     date_str: Optional[str] = None,
     user_theme: Optional[str] = None,
+    lang: Optional[str] = None,
 ) -> dict:
     """Generate blog content from photo analyses and selected highlights.
 
@@ -90,6 +100,7 @@ def generate_blog_content(
         highlights: Selected highlight photos with analysis
         date_str: Date string for footer (defaults to today)
         user_theme: Optional user-specified theme/style keyword
+        lang: Output language ('zh' or 'en'). Auto-detected from user_theme if None.
 
     Returns:
         Blog content dict with title, description, insights, tip, footer
@@ -125,6 +136,9 @@ def generate_blog_content(
             "score": h.get("score", 0),
         })
 
+    if lang is None:
+        lang = _detect_lang(user_theme or "")
+
     theme_instruction = ""
     if user_theme:
         theme_instruction = f"""
@@ -132,10 +146,19 @@ def generate_blog_content(
    If fewer than 2 photos match this theme, ignore it and use the best theme from the actual content.
    In that case, the suggested_themes field becomes especially important — offer 3 themes that DO match the photos."""
 
+    lang_instruction = ""
+    if lang == "zh":
+        lang_instruction = """
+**Language requirement**: The user speaks Chinese. ALL generated text (title, description, insights, tip, suggested_themes) MUST be written in Chinese (简体中文). Use warm, literary Chinese style."""
+    else:
+        lang_instruction = """
+**Language requirement**: Write all text in English."""
+
     prompt = BLOG_GENERATION_PROMPT.format(
         analysis_json=json.dumps(analysis_summary, ensure_ascii=False, indent=2),
         highlights_json=json.dumps(highlights_detail, ensure_ascii=False, indent=2),
         theme_instruction=theme_instruction,
+        lang_instruction=lang_instruction,
     )
 
     try:
@@ -146,7 +169,7 @@ def generate_blog_content(
         )
     except Exception as e:
         print(f"ERROR: Blog generation failed: {e}")
-        return _fallback_content(highlights, date_str)
+        return _fallback_content(highlights, date_str, lang)
 
     text = ""
     for part in response.candidates[0].content.parts:
@@ -170,30 +193,39 @@ def generate_blog_content(
                 blog = json.loads(text[start:end+1])
             except json.JSONDecodeError:
                 print(f"  [WARN] Failed to parse blog JSON, using fallback")
-                return _fallback_content(highlights, date_str)
+                return _fallback_content(highlights, date_str, lang)
         else:
-            return _fallback_content(highlights, date_str)
+            return _fallback_content(highlights, date_str, lang)
 
     blog["footer_date"] = date_str
+    blog["_lang"] = lang
     return blog
 
 
-def _fallback_content(highlights: List[dict], date_str: str) -> dict:
+def _fallback_content(highlights: List[dict], date_str: str, lang: str = "en") -> dict:
     """Minimal fallback when LLM generation fails."""
     insights = []
     for i, h in enumerate(highlights[:9]):
         insights.append({
-            "text": h.get("narrative_hook", h.get("scene", "A wonderful moment")),
+            "text": h.get("narrative_hook", h.get("scene", "精彩瞬间" if lang == "zh" else "A wonderful moment")),
             "image_index": i,
         })
+    if lang == "zh":
+        return {
+            "title": "今日一瞥",
+            "hero_image_index": 0,
+            "description": {"text": "捕捉生活中的美好瞬间——每一帧都值得珍藏。", "image_index": 0},
+            "insights": insights,
+            "tip": "珍惜当下，记录美好——温暖藏在细节里。",
+            "footer_date": date_str,
+            "_lang": lang,
+        }
     return {
         "title": "Today's Glimpse",
         "hero_image_index": 0,
-        "description": {
-            "text": "Capturing life's beautiful moments — every frame is worth treasuring.",
-            "image_index": 0,
-        },
+        "description": {"text": "Capturing life's beautiful moments — every frame is worth treasuring.", "image_index": 0},
         "insights": insights,
         "tip": "Savor the present, capture the beauty — warmth lives in the details.",
         "footer_date": date_str,
+        "_lang": lang,
     }

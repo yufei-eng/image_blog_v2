@@ -28,6 +28,12 @@ def _img_to_base64(path: str, max_width: int = 800) -> str:
             return base64.b64encode(f.read()).decode("utf-8")
 
 
+_LABELS = {
+    "en": {"insights": "Insights", "tips": "Tips", "brand": "Fleeting Thoughts", "default_title": "Today's Glimpse"},
+    "zh": {"insights": "灵感", "tips": "小提醒", "brand": "浮光掠影", "default_title": "今日一瞥"},
+}
+
+
 def render_blog_html(
     blog_content: dict,
     highlight_paths: List[str],
@@ -43,7 +49,9 @@ def render_blog_html(
     Returns:
         Absolute path to the generated HTML file
     """
-    title = blog_content.get("title", "Today's Glimpse")
+    lang = blog_content.get("_lang", "en")
+    L = _LABELS.get(lang, _LABELS["en"])
+    title = blog_content.get("title", L["default_title"])
     desc = blog_content.get("description", {})
     desc_text = desc.get("text", "") if isinstance(desc, dict) else str(desc)
     hero_idx = blog_content.get("hero_image_index", 0)
@@ -74,12 +82,13 @@ def render_blog_html(
             <div class="insight-image">{img_tag}</div>
         </div>"""
 
+    html_lang = "zh-CN" if lang == "zh" else "en"
     html = f"""<!DOCTYPE html>
-<html lang="en">
+<html lang="{html_lang}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{title} — Fleeting Thoughts</title>
+<title>{title} — {L["brand"]}</title>
 <style>
 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
 body {{
@@ -214,16 +223,16 @@ h1 {{
 
     <p class="desc-text">{desc_text}</p>
 
-    <div class="section-title">Insights</div>
+    <div class="section-title">{L["insights"]}</div>
     {insights_html}
 
     <div class="tip-box">
-        <div class="tip-title">Tips</div>
+        <div class="tip-title">{L["tips"]}</div>
         <div class="tip-text">{tip}</div>
     </div>
 
     <div class="footer">
-        <span class="footer-label">Fleeting Thoughts</span>
+        <span class="footer-label">{L["brand"]}</span>
         <span>{footer_date}</span>
     </div>
 </div>

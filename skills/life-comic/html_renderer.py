@@ -43,7 +43,9 @@ def render_comic_html(
     Returns:
         Absolute path to generated HTML file
     """
-    theme = storyboard.get("theme", "Life Comic")
+    lang = storyboard.get("_lang", "en")
+    brand = "生活漫画" if lang == "zh" else "Life Comic"
+    theme = storyboard.get("theme", brand)
     narrative = storyboard.get("narrative", {})
     title = narrative.get("title", f"《{theme}》")
     body = narrative.get("body", "")
@@ -73,12 +75,13 @@ def render_comic_html(
     elif fallback_gallery:
         comic_section = fallback_gallery
 
+    html_lang = "zh-CN" if lang == "zh" else "en"
     html = f"""<!DOCTYPE html>
-<html lang="en">
+<html lang="{html_lang}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{title} — Life Comic</title>
+<title>{title} — {brand}</title>
 <style>
 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
 body {{
@@ -181,7 +184,7 @@ h1 {{
     </div>
 
     <div class="footer">
-        <span class="footer-label">Life Comic</span>
+        <span class="footer-label">{brand}</span>
         <span>{footer_date}</span>
     </div>
 </div>

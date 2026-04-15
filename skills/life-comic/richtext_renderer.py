@@ -14,7 +14,8 @@ def render_comic_richtext(
     output_path: str,
 ) -> str:
     """Render comic as Markdown for chat agents. Returns output path."""
-    theme = storyboard.get("theme", "Life Comic")
+    lang = storyboard.get("_lang", "en")
+    theme = storyboard.get("theme", "生活漫画" if lang == "zh" else "Life Comic")
     narrative = storyboard.get("narrative", {})
     title = narrative.get("title", theme)
     body = narrative.get("body", "")
@@ -42,7 +43,8 @@ def render_comic_richtext(
     for i, panel in enumerate(panels):
         tag = panel.get("emotion_tag", "")
         desc = panel.get("scene_description", "")
-        lines.append(f"**Panel {i+1}** — _{tag}_")
+        panel_label = f"第{i+1}格" if lang == "zh" else f"Panel {i+1}"
+        lines.append(f"**{panel_label}** — _{tag}_")
         lines.append(f"{desc[:200]}")
         if i < len(reference_paths):
             lines.append(f"![ref {i+1}]({reference_paths[i]})")
@@ -59,8 +61,9 @@ def render_comic_richtext(
         lines.append("")
 
     if suggested_themes:
+        label = "你可能也喜欢" if lang == "zh" else "Other themes you might like"
         lines.append("---")
-        lines.append(f"**Other themes you might like**: {' | '.join(suggested_themes)}")
+        lines.append(f"**{label}**: {' | '.join(suggested_themes)}")
         lines.append("")
 
     md = "\n".join(lines)

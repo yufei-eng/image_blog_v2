@@ -110,11 +110,18 @@ def main():
             if date_str:
                 break
 
+    def _detect_lang(text):
+        if not text:
+            return "en"
+        cjk = sum(1 for c in text if '\u4e00' <= c <= '\u9fff' or '\u3400' <= c <= '\u4dbf')
+        return "zh" if cjk / max(len(text.replace(" ", "")), 1) > 0.15 else "en"
+
+    lang = _detect_lang(user_theme)
     if user_theme:
-        print(f"\n  Theme: '{user_theme}'")
+        print(f"\n  Theme: '{user_theme}' (lang={lang})")
 
     print(f"\n[4/5] Generating storyboard and narrative...")
-    storyboard = generate_storyboard(selected_dicts, date_str=date_str, user_theme=user_theme)
+    storyboard = generate_storyboard(selected_dicts, date_str=date_str, user_theme=user_theme, lang=lang)
     print(f"  Theme: {storyboard.get('theme', '?')}")
     print(f"  Title: {storyboard.get('narrative', {}).get('title', '?')}")
     print(f"  Panels: {len(storyboard.get('panels', []))}")

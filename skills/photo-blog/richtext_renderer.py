@@ -26,12 +26,20 @@ def _img_to_base64_url(path: str, max_w: int = 600) -> str:
     return f"data:image/jpeg;base64,{b64}"
 
 
+_LABELS = {
+    "en": {"tip": "Tip", "other_themes": "Other themes you might like", "default_title": "Photo Blog"},
+    "zh": {"tip": "小提醒", "other_themes": "你可能也喜欢", "default_title": "图文博客"},
+}
+
+
 def render_blog_richtext(blog_content: dict, highlight_paths: list[str], output_path: str) -> str:
     """Render blog content as Markdown suitable for chat agents.
 
     Returns the output file path.
     """
-    title = blog_content.get("title", "Photo Blog")
+    lang = blog_content.get("_lang", "en")
+    L = _LABELS.get(lang, _LABELS["en"])
+    title = blog_content.get("title", L["default_title"])
     desc = blog_content.get("description", {})
     insights = blog_content.get("insights", [])
     tip = blog_content.get("tip", "")
@@ -65,7 +73,7 @@ def render_blog_richtext(blog_content: dict, highlight_paths: list[str], output_
 
     if tip:
         lines.append("---")
-        lines.append(f"**Tip**: {tip}")
+        lines.append(f"**{L['tip']}**: {tip}")
         lines.append("")
 
     if footer_date:
@@ -74,7 +82,7 @@ def render_blog_richtext(blog_content: dict, highlight_paths: list[str], output_
 
     if suggested_themes:
         lines.append("---")
-        lines.append(f"**Other themes you might like**: {' | '.join(suggested_themes)}")
+        lines.append(f"**{L['other_themes']}**: {' | '.join(suggested_themes)}")
         lines.append("")
 
     md = "\n".join(lines)
