@@ -3,7 +3,7 @@
 
 Usage:
     python3 main.py <image_dir_or_files> [--max-highlights 9] [--output blog.html] [--date 2026-04-13]
-        [--theme "food journey"] [--format html] [--skip-cover]
+        [--theme "food journey"] [--format html] [--skip-cover] [--output-dir .]
 
 Workflow:
     1. Batch analyze photos via Gemini 3 Pro (understanding)
@@ -77,6 +77,8 @@ def main():
                         help="Output format: html, richtext (markdown for chat), png, all (default)")
     parser.add_argument("--skip-cover", action="store_true",
                         help="Skip AI cover image generation, use original photo as hero")
+    parser.add_argument("--output-dir", default=None,
+                        help="Directory for generated images (default: same as --output)")
     args = parser.parse_args()
 
     user_theme = args.theme or args.style
@@ -134,7 +136,8 @@ def main():
 
     highlight_paths = [h.file_path for h in highlights]
     output_base = os.path.splitext(args.output)[0]
-    output_dir = os.path.dirname(os.path.abspath(args.output)) or "."
+    output_dir = args.output_dir or os.path.dirname(os.path.abspath(args.output)) or "."
+    os.makedirs(output_dir, exist_ok=True)
 
     cover_path = None
     if not skip_cover:

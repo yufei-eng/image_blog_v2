@@ -190,6 +190,7 @@ h1 {{
 </html>"""
 
     abs_path = os.path.abspath(output_path)
+    os.makedirs(os.path.dirname(abs_path) or ".", exist_ok=True)
     with open(abs_path, "w", encoding="utf-8") as f:
         f.write(html)
     return abs_path
