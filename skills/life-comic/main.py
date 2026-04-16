@@ -183,6 +183,20 @@ def main():
         print(f"  >>> RICH TEXT (for chat): {generated_files['richtext']}")
     print(f"{'=' * 60}")
 
+    _html_label = ("HTML \u7248\u672c\uff08\u4f9b\u5185\u90e8\u6d4b\u8bd5\uff09"
+                   if lang == "zh" else "HTML version (for internal testing)")
+    print(f"\n>>> UPLOAD INSTRUCTIONS (follow exactly):")
+    if "png" in generated_files:
+        print(f"  Upload {generated_files['png']}")
+        print(f'  Link text: "\U0001f4f7 [PNG download](<url>)"')
+    if "html" in generated_files:
+        print(f"  Upload {generated_files['html']}")
+        print(f'  Link text: "\U0001f4c4 [{_html_label}](<url>)"')
+    if comic_image_path:
+        print(f"  Upload {comic_image_path}")
+        print(f'  Link text: "\U0001f3a8 [Comic art](<url>)"')
+    print(f"  Do NOT embed images inline with ![...]. Provide download links only.")
+
 
 if __name__ == "__main__":
     main()
