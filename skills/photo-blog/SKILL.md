@@ -81,7 +81,7 @@ By default (`--format all`), all three formats are generated every time:
 1. **PNG** — upload via `mcp__proxy__upload_file` and provide a download link (e.g. "📷 [PNG download](<url>)")
 2. **HTML** — upload via `mcp__proxy__upload_file` and provide a download link with i18n label:
    - English: `📄 [HTML version (for internal testing)](<url>)`
-   - Other languages: translate "for internal testing" naturally into the user's language
+   - Chinese: `📄 [HTML 版本（供内部测试）](<url>)`
 3. **Do NOT** embed PNG as an inline image (`![...](<url>)`). Provide download links only.
 
 ### Image Count Support
