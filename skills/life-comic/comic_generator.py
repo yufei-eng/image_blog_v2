@@ -102,16 +102,17 @@ STORYBOARD_PROMPT = """You are a warm, heartfelt comic scriptwriter. Based on th
   ],
   "narrative": {{
     "title": "Title (matching the theme)",
-    "body": "A poetic narrative of 50-80 words (MUST be under 250 characters). Capture the emotional essence of the journey in flowing prose. Do NOT recap each panel — instead, weave a single cohesive feeling."
+    "body": "A poetic narrative under 250 characters (roughly 30-40 words). Capture the emotional essence in one flowing impression — NOT a panel-by-panel recap."
   }},
   "footer_date": "YYYY-MM-DD",
   "suggested_themes": ["theme1", "theme2", "theme3"]
 }}
 ```
 
-**CRITICAL BREVITY CONSTRAINT**:
-- narrative.body MUST be under 250 characters. This is a poetic impression, not an essay.
-- Total user-facing text (theme + emotional_arc + title + body) should be around 300 characters.
+**HARD LENGTH CONSTRAINTS (non-negotiable)**:
+- narrative.body: MUST be under 250 characters. Count carefully — 250 characters is about 2 short sentences.
+- emotional_arc: MUST be under 100 characters.
+- If in doubt, write SHORTER. A haiku-length impression beats an essay every time.
 
 **Notes**:
 - panels array source_photo_index corresponds to the input material index
@@ -212,7 +213,20 @@ def generate_storyboard(panel_moments: List[dict], date_str: Optional[str] = Non
 
     sb["footer_date"] = date_str
     sb["_lang"] = lang
+
+    _enforce_narrative_limits(sb)
     return sb
+
+
+def _enforce_narrative_limits(sb: dict):
+    """Truncate narrative fields that exceed character limits."""
+    narr = sb.get("narrative", {})
+    body = narr.get("body", "")
+    if len(body) > 250:
+        narr["body"] = body[:250].rsplit(" ", 1)[0] + "…"
+    arc = sb.get("emotional_arc", "")
+    if len(arc) > 100:
+        sb["emotional_arc"] = arc[:100].rsplit(" ", 1)[0] + "…"
 
 
 # ── Step 2: Generate comic-style multi-panel image ──

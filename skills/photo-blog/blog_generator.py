@@ -61,16 +61,16 @@ BLOG_GENERATION_PROMPT = """You are a content creator with both artistic sensibi
   "title": "A poetic title of 3-6 words (e.g., 'Afternoon Among the Peaks', 'Rainy Lanes & Red Broth')",
   "hero_image_index": 0,
   "description": {{
-    "text": "One evocative atmospheric sentence that sets the mood for the entire blog.",
+    "text": "One short atmospheric sentence, MUST be under 150 characters.",
     "image_index": 0
   }},
   "insights": [
     {{
-      "text": "1-2 concise, evocative sentences about this photo. Capture its unique mood or detail — keep it punchy, not an essay.",
+      "text": "A short, evocative caption for this photo, MUST be under 150 characters. Think magazine caption, not paragraph.",
       "image_index": 0
     }}
   ],
-  "tip": "1-2 practical sentences with a useful takeaway related to the photos.",
+  "tip": "One practical tip sentence, MUST be under 150 characters.",
   "footer_date": "YYYY-MM-DD",
   "suggested_themes": ["theme1", "theme2", "theme3"]
 }}
@@ -83,7 +83,13 @@ BLOG_GENERATION_PROMPT = """You are a content creator with both artistic sensibi
 - Title should be concise and evocative — not too long
 - Each insight text must be unique, covering different dimensions of the scene
 - **Important**: Titles must be creative and distinctive. Avoid overused clichés.
-- **suggested_themes**: Always provide 3 alternative theme suggestions based on actual photo content (short phrases)."""
+- **suggested_themes**: Always provide 3 alternative theme suggestions based on actual photo content (short phrases).
+
+**HARD LENGTH CONSTRAINT (non-negotiable)**:
+- description.text: MUST be under 150 characters
+- Each insight text: MUST be under 150 characters
+- tip: MUST be under 150 characters
+- Write like a magazine caption — punchy and evocative, never an essay."""
 
 
 def _detect_lang(text: str) -> str:
@@ -207,7 +213,21 @@ def generate_blog_content(
 
     blog["footer_date"] = date_str
     blog["_lang"] = lang
+
+    _enforce_char_limits(blog)
     return blog
+
+
+def _enforce_char_limits(blog: dict, limit: int = 150):
+    """Truncate text fields that exceed the character limit."""
+    desc = blog.get("description", {})
+    if isinstance(desc, dict) and len(desc.get("text", "")) > limit:
+        desc["text"] = desc["text"][:limit].rsplit(" ", 1)[0] + "…"
+    for ins in blog.get("insights", []):
+        if len(ins.get("text", "")) > limit:
+            ins["text"] = ins["text"][:limit].rsplit(" ", 1)[0] + "…"
+    if len(blog.get("tip", "")) > limit:
+        blog["tip"] = blog["tip"][:limit].rsplit(" ", 1)[0] + "…"
 
 
 def _fallback_content(highlights: List[dict], date_str: str, lang: str = "en") -> dict:
