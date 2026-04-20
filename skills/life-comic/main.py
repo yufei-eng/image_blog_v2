@@ -121,10 +121,13 @@ def main():
         print(f"\n  Theme: '{user_theme}' (lang={lang})")
 
     print(f"\n[4/5] Generating storyboard and narrative...")
-    storyboard = generate_storyboard(selected_dicts, date_str=date_str, user_theme=user_theme, lang=lang)
+    storyboard = generate_storyboard(selected_dicts, date_str=date_str, user_theme=user_theme, lang=lang, target_panel_count=effective_panels)
     print(f"  Theme: {storyboard.get('theme', '?')}")
     print(f"  Title: {storyboard.get('narrative', {}).get('title', '?')}")
     print(f"  Panels: {len(storyboard.get('panels', []))}")
+    actual_panels = len(storyboard.get("panels", []))
+    if actual_panels < effective_panels:
+        print(f"  [WARN] Storyboard returned {actual_panels} panels, expected {effective_panels}")
 
     suggested = storyboard.get("suggested_themes", [])
     if suggested:

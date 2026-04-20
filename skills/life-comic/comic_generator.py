@@ -115,6 +115,7 @@ STORYBOARD_PROMPT = """You are a warm, heartfelt comic scriptwriter. Based on th
 - If in doubt, write SHORTER. A haiku-length impression beats an essay every time.
 
 **Notes**:
+- **CRITICAL**: The panels array MUST contain exactly {panel_count} items — one panel for each input moment. Do NOT skip, merge, or omit any.
 - panels array source_photo_index corresponds to the input material index
 - scene_description is a detailed instruction for the comic artist — include sufficient visual detail (this is NOT shown to users)
 - narrative.body should have literary quality — avoid list-style writing
@@ -129,11 +130,13 @@ def _detect_lang(text: str) -> str:
     return "zh" if cjk / max(len(text.replace(" ", "")), 1) > 0.15 else "en"
 
 
-def generate_storyboard(panel_moments: List[dict], date_str: Optional[str] = None, user_theme: Optional[str] = None, lang: Optional[str] = None) -> dict:
+def generate_storyboard(panel_moments: List[dict], date_str: Optional[str] = None, user_theme: Optional[str] = None, lang: Optional[str] = None, target_panel_count: Optional[int] = None) -> dict:
     """Generate storyboard script and narrative text."""
     from datetime import date
     if not date_str:
         date_str = date.today().strftime("%Y-%m-%d")
+
+    panel_count = target_panel_count if target_panel_count is not None else len(panel_moments)
 
     cfg = _load_config()
     client = _get_client(cfg)
@@ -174,6 +177,7 @@ def generate_storyboard(panel_moments: List[dict], date_str: Optional[str] = Non
         panels_json=json.dumps(panels_detail, ensure_ascii=False, indent=2),
         theme_instruction=theme_instruction,
         lang_instruction=lang_instruction,
+        panel_count=panel_count,
     )
 
     try:

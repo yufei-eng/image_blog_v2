@@ -134,9 +134,12 @@ def main():
         print(f"\n  Theme: '{user_theme}' (lang={lang})")
 
     print(f"\n[4/{total_steps}] Generating blog content...")
-    blog_content = generate_blog_content(all_dicts, highlight_dicts, date_str=date_str, user_theme=user_theme, lang=lang)
+    blog_content = generate_blog_content(all_dicts, highlight_dicts, date_str=date_str, user_theme=user_theme, lang=lang, target_count=len(highlight_dicts))
     print(f"  Title: {blog_content.get('title', '?')}")
     print(f"  Insights: {len(blog_content.get('insights', []))} items")
+    actual_insights = len(blog_content.get("insights", []))
+    if actual_insights < len(highlight_dicts):
+        print(f"  [WARN] Blog returned {actual_insights} insights, expected {len(highlight_dicts)}")
 
     suggested = blog_content.get("suggested_themes", [])
     if suggested:

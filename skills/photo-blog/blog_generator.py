@@ -77,7 +77,7 @@ BLOG_GENERATION_PROMPT = """You are a content creator with both artistic sensibi
 ```
 
 **Notes**:
-- The insights array should contain one item per highlight photo (up to 10), each mapped by image_index
+- **CRITICAL**: The insights array MUST contain exactly {highlight_count} items — one per highlight photo, each mapped by image_index. Do NOT skip any.
 - hero_image_index points to the best hero photo in the highlights array
 - description.image_index also points to the highlights array
 - Title should be concise and evocative — not too long
@@ -106,6 +106,7 @@ def generate_blog_content(
     date_str: Optional[str] = None,
     user_theme: Optional[str] = None,
     lang: Optional[str] = None,
+    target_count: Optional[int] = None,
 ) -> dict:
     """Generate blog content from photo analyses and selected highlights.
 
@@ -122,6 +123,8 @@ def generate_blog_content(
     from datetime import date
     if not date_str:
         date_str = date.today().strftime("%Y-%m-%d")
+
+    highlight_count = target_count if target_count is not None else len(highlights)
 
     cfg = _load_config()
     client = _get_client(cfg)
@@ -173,6 +176,7 @@ def generate_blog_content(
         highlights_json=json.dumps(highlights_detail, ensure_ascii=False, indent=2),
         theme_instruction=theme_instruction,
         lang_instruction=lang_instruction,
+        highlight_count=highlight_count,
     )
 
     try:
