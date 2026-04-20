@@ -2,7 +2,7 @@
 """Photo Blog Generator — main entry point.
 
 Usage:
-    python3 main.py <image_dir_or_files> [--max-highlights 9] [--output blog.html] [--date 2026-04-13]
+    python3 main.py <image_dir_or_files> [--max-highlights 10] [--output blog.html] [--date 2026-04-13]
         [--theme "food journey"] [--format html] [--skip-cover] [--output-dir .]
 
 Workflow:
@@ -68,7 +68,7 @@ def analysis_to_dict(a: PhotoAnalysis) -> dict:
 def main():
     parser = argparse.ArgumentParser(description="Photo Blog Generator")
     parser.add_argument("input", help="Image directory or file path")
-    parser.add_argument("--max-highlights", type=int, default=9, help="Max highlight photos (1-9)")
+    parser.add_argument("--max-highlights", type=int, default=10, help="Max highlight photos (1-10)")
     parser.add_argument("--output", default="blog_output.html", help="Output HTML path")
     parser.add_argument("--date", default=None, help="Date string for footer")
     parser.add_argument("--save-analysis", default=None, help="Save analysis JSON to file")
@@ -83,7 +83,7 @@ def main():
     args = parser.parse_args()
 
     user_theme = args.theme or args.style
-    max_hl = min(max(args.max_highlights, 1), 9)
+    max_hl = min(max(args.max_highlights, 1), 10)
 
     print("=" * 60)
     print("  PHOTO BLOG GENERATOR v0.2")

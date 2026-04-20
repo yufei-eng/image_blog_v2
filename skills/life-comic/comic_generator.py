@@ -137,7 +137,7 @@ def generate_storyboard(panel_moments: List[dict], date_str: Optional[str] = Non
 
     cfg = _load_config()
     client = _get_client(cfg)
-    model = cfg.get("compass_api", {}).get("understanding_model", "gemini-3-pro-image-preview")
+    model = cfg.get("compass_api", {}).get("understanding_model", "gemini-3-pro-preview")
 
     panels_detail = []
     for i, m in enumerate(panel_moments):
@@ -312,7 +312,7 @@ def generate_comic_image(
 
     parts: list[types.Part] = []
 
-    ref_count = min(len(reference_photos), 9)
+    ref_count = min(len(reference_photos), 10)
     for rp in reference_photos[:ref_count]:
         try:
             img_data, mime = _load_image_bytes(rp)
@@ -358,7 +358,7 @@ def generate_comic_image(
 def _fallback_storyboard(panels: List[dict], date_str: str, lang: str = "en") -> dict:
     """Minimal fallback storyboard."""
     panel_list = []
-    for i, p in enumerate(panels[:9]):
+    for i, p in enumerate(panels[:10]):
         panel_list.append({
             "panel_index": i,
             "source_photo_index": i,

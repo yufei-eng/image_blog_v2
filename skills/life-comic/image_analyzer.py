@@ -215,7 +215,7 @@ def analyze_batch(client, model: str, image_paths: List[str]) -> List[dict]:
 def analyze_photos(image_paths: List[str], batch_size: int = BATCH_SIZE) -> List[ComicMoment]:
     cfg = _load_config()
     client = _get_client(cfg)
-    model = cfg.get("compass_api", {}).get("understanding_model", "gemini-3-pro-image-preview")
+    model = cfg.get("compass_api", {}).get("understanding_model", "gemini-3-pro-preview")
 
     all_moments: List[ComicMoment] = []
     total_batches = math.ceil(len(image_paths) / batch_size)

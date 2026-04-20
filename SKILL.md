@@ -4,7 +4,7 @@ description: >-
   Photo-to-content generation tool with two AI skills — photo-blog (narrative visual blog)
   and life-comic (hand-drawn comic strip). Analyzes photos with Gemini 3 Pro for scene
   understanding and scoring, selects highlights with diversity optimization, generates
-  themed content with poetic titles and emotional narrative. Supports 1-9 images,
+  themed content with poetic titles and emotional narrative. Supports 1-10 images,
   theme/style keyword guidance with smart fallback, and triple output format
   (HTML, rich text Markdown, HiDPI PNG). Triggers when users request photo blog,
   life summary, travel log, comic strip, visual diary, or illustrated story from images.
@@ -83,7 +83,7 @@ python3 skills/photo-blog/main.py <image_dir_or_file> \
 | Arg | Description | Default |
 |-----|-------------|---------|
 | `input` | Image directory or file path | required |
-| `--max-highlights` | Number of highlight photos (1-9) | 9 |
+| `--max-highlights` | Number of highlight photos (1-10) | 10 |
 | `--theme` | Theme keyword to guide generation | auto |
 | `--format` | `html` / `richtext` / `png` / `all` | `all` |
 | `--output` | Output file path | `blog_output.html` |
@@ -102,7 +102,7 @@ python3 skills/life-comic/main.py <image_dir_or_file> \
 | Arg | Description | Default |
 |-----|-------------|---------|
 | `input` | Image directory or file path | required |
-| `--panels` | Number of comic panels (1-9) | 8 |
+| `--panels` | Number of comic panels (1-10) | 8 |
 | `--theme` | Theme keyword to guide generation | auto |
 | `--format` | `html` / `richtext` / `png` / `all` | `all` |
 | `--output` | Output file path | `comic_output.html` |
@@ -148,4 +148,4 @@ Users can specify a theme via `--theme`. If the photos don't match (fewer than 2
 - **Scoring**: 5-axis (photo-blog) / 3-axis (life-comic) with greedy diversity selection
 - **Image handling**: EXIF orientation auto-fix, date extraction, smart downscaling
 - **PNG output**: Playwright headless browser full-page screenshot of HTML (fallback: Pillow composite)
-- **Panel layouts**: 1x1 / 1x2 / 2x2 / 2x3 / 2x4 / 3x3 (auto-selected by panel count)
+- **Panel layouts**: 1x1 / 1x2 / 2x2 / 2x3 / 2x4 / 3x3 / 2x5 (auto-selected by panel count)

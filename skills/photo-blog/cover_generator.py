@@ -180,7 +180,7 @@ def _score_template(template: dict, ctx: dict) -> float:
     score = 0.0
 
     # Photo count fit (30%)
-    pc_range = template.get("photo_count_range", [1, 9])
+    pc_range = template.get("photo_count_range", [1, 10])
     pc = ctx["photo_count"]
     if pc_range[0] <= pc <= pc_range[1]:
         score += 30.0

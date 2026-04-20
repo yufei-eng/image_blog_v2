@@ -244,7 +244,7 @@ def analyze_photos(image_paths: List[str], batch_size: int = BATCH_SIZE) -> List
     """Analyze all photos in batches and return scored/structured results."""
     cfg = _load_config()
     client = _get_client(cfg)
-    model = cfg.get("compass_api", {}).get("understanding_model", "gemini-3-pro-image-preview")
+    model = cfg.get("compass_api", {}).get("understanding_model", "gemini-3-pro-preview")
 
     all_results: List[PhotoAnalysis] = []
     total_batches = math.ceil(len(image_paths) / batch_size)

@@ -77,7 +77,7 @@ BLOG_GENERATION_PROMPT = """You are a content creator with both artistic sensibi
 ```
 
 **Notes**:
-- The insights array should contain one item per highlight photo (up to 9), each mapped by image_index
+- The insights array should contain one item per highlight photo (up to 10), each mapped by image_index
 - hero_image_index points to the best hero photo in the highlights array
 - description.image_index also points to the highlights array
 - Title should be concise and evocative — not too long
@@ -125,7 +125,7 @@ def generate_blog_content(
 
     cfg = _load_config()
     client = _get_client(cfg)
-    model = cfg.get("compass_api", {}).get("understanding_model", "gemini-3-pro-image-preview")
+    model = cfg.get("compass_api", {}).get("understanding_model", "gemini-3-pro-preview")
 
     analysis_summary = []
     for a in all_analyses[:30]:
@@ -245,7 +245,7 @@ def _enforce_char_limits(blog: dict, limit: int = 150):
 def _fallback_content(highlights: List[dict], date_str: str, lang: str = "en") -> dict:
     """Minimal fallback when LLM generation fails."""
     insights = []
-    for i, h in enumerate(highlights[:9]):
+    for i, h in enumerate(highlights[:10]):
         insights.append({
             "text": h.get("narrative_hook", h.get("scene", "\u7cbe\u5f69\u77ac\u95f4" if lang == "zh" else "A wonderful moment")),
             "image_index": i,

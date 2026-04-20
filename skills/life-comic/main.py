@@ -59,7 +59,7 @@ def moment_to_dict(m: ComicMoment) -> dict:
 def main():
     parser = argparse.ArgumentParser(description="Life Comic Generator")
     parser.add_argument("input", help="Image directory or file path")
-    parser.add_argument("--panels", type=int, default=8, help="Number of comic panels (1-9)")
+    parser.add_argument("--panels", type=int, default=8, help="Number of comic panels (1-10)")
     parser.add_argument("--output", default="comic_output.html", help="Output HTML path")
     parser.add_argument("--date", default=None, help="Date string for footer")
     parser.add_argument("--output-dir", default=".", help="Directory for generated images")
@@ -72,7 +72,7 @@ def main():
     args = parser.parse_args()
 
     user_theme = args.theme or args.style
-    panel_count = min(max(args.panels, 1), 9)
+    panel_count = min(max(args.panels, 1), 10)
 
     print("=" * 60)
     print("  LIFE COMIC GENERATOR v0.2")

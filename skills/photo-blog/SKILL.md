@@ -5,7 +5,7 @@ description: >-
   and select highlights with diversity optimization, generate narrative-driven blog with
   poetic title, scene insights, and tips. Generates diverse AI cover images using a
   89-template style library matched to blog content (mood, theme, photo count).
-  Supports 1-9 images, theme/style keywords, and triple output (HTML, rich text, PNG).
+  Supports 1-10 images, theme/style keywords, and triple output (HTML, rich text, PNG).
   Triggers when users request photo blog, life summary, travel log, photo diary, or
   visual story from images.
 argument-hint: <image_directory_or_file>
@@ -47,7 +47,7 @@ The `main.py` script lives in the same directory as this SKILL.md. Use the direc
 #   ~/.cursor/skills/photo-blog/main.py   (Cursor)
 
 python3 <SKILL_DIR>/main.py <image_dir_or_files> \
-    [--max-highlights 9] \
+    [--max-highlights 10] \
     [--output blog.html] \
     [--date 2026-04-13] \
     [--theme "food journey"] \
@@ -62,7 +62,7 @@ python3 <SKILL_DIR>/main.py <image_dir_or_files> \
 | Arg | Description | Default |
 |-----|-------------|---------|
 | `input` | Image directory or file path | required |
-| `--max-highlights` | Number of highlight photos (1-9) | 9 |
+| `--max-highlights` | Number of highlight photos (1-10) | 10 |
 | `--output` | Output file path | `blog_output.html` |
 | `--date` | Date for footer (auto-detected from EXIF if omitted) | auto |
 | `--theme` | Theme keyword to guide generation (e.g., "food", "nightlife") | auto |
@@ -90,7 +90,7 @@ By default (`--format all`), all three formats are generated every time:
 
 ### Image Count Support
 
-Supports **1 to 9** input images. Works with a single photo up to large albums (auto-selects top 9 highlights from any number of inputs).
+Supports **1 to 10** input images. Works with a single photo up to large albums (auto-selects top 10 highlights from any number of inputs).
 
 ### Theme / Style Keywords
 
