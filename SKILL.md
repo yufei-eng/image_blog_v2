@@ -37,24 +37,28 @@ Two photo-to-content generation skills powered by Gemini 3 Pro + Gemini 3.1 Flas
 
 ## Setup (in sandbox)
 
+**Quick-start note**: The code has a built-in API key fallback chain that automatically checks env vars in this order: `COMPASS_CLIENT_TOKEN` → `COMPASS_API_KEY` → `ANTHROPIC_API_KEY` → `GOOGLE_API_KEY` → `GEMINI_API_KEY` → config.json. If any of these env vars is already set in the sandbox environment, you can **skip the config.json setup steps** below — the code will pick up the key automatically. Just download, install dependencies, and run.
+
 Download and install the skill:
 
 ```bash
 # Download
-curl -sL https://codeload.github.com/yufei-eng/image_blog/zip/refs/heads/main -o /tmp/image_blog.zip
-cd /tmp && unzip -qo image_blog.zip && cd image_blog-main
+curl -sL https://codeload.github.com/yufei-eng/image_blog_v2/zip/refs/heads/main -o /tmp/image_blog.zip
+cd /tmp && unzip -qo image_blog.zip && cd image_blog_v2-main
 
 # Install dependencies
 pip install -q google-genai Pillow playwright
 python -m playwright install chromium 2>/dev/null || true
+```
 
-# Setup config (copy template, token is auto-injected by sandbox env)
+Only if no API key env var is set, configure manually:
+```bash
 for skill in photo-blog life-comic; do
   cp skills/$skill/config.json.example skills/$skill/config.json
 done
 ```
 
-If `COMPASS_API_KEY` env var is set, update config.json with it:
+If `COMPASS_API_KEY` env var is set but you still want config.json:
 ```bash
 for skill in photo-blog life-comic; do
   python3 -c "
@@ -88,7 +92,7 @@ python3 skills/photo-blog/main.py <image_dir_or_file> \
 
 ```bash
 python3 skills/life-comic/main.py <image_dir_or_file> \
-    [--panels 6] \
+    [--panels 8] \
     [--theme "city nightscape"] \
     [--format all] \
     [--output output/comic.html] \
@@ -98,7 +102,7 @@ python3 skills/life-comic/main.py <image_dir_or_file> \
 | Arg | Description | Default |
 |-----|-------------|---------|
 | `input` | Image directory or file path | required |
-| `--panels` | Number of comic panels (1-9) | 6 |
+| `--panels` | Number of comic panels (1-9) | 8 |
 | `--theme` | Theme keyword to guide generation | auto |
 | `--format` | `html` / `richtext` / `png` / `all` | `all` |
 | `--output` | Output file path | `comic_output.html` |
