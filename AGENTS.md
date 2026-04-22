@@ -2,25 +2,25 @@
 
 ## Project Overview
 
-两个 Cursor/Claude Skill：**photo-blog**（照片博客）和 **life-comic**（生活漫画），基于 Gemini 3 Pro（理解）+ Gemini 3.1 Flash Image（生成）。
+Two Cursor/Claude Skills: **photo-blog** and **life-comic**, powered by Gemini 3 Pro (understanding) + Gemini 3.1 Flash Image (generation).
 
-- **语言**: Python 3
-- **依赖**: `google-genai`, `Pillow`, `Playwright`（截图用）
-- **模型**: Gemini 3 Pro（图片分析/打分）, Gemini 3.1 Flash Image（漫画生成）
+- **Language**: Python 3
+- **Dependencies**: `google-genai`, `Pillow`, `Playwright` (for screenshots)
+- **Models**: Gemini 3 Pro (image analysis/scoring), Gemini 3.1 Flash Image (comic generation)
 
 ## Build & Run
 
 ```bash
-# 安装
+# Install
 bash install.sh
 
-# 更新
+# Update
 bash update.sh
 
-# 运行 photo-blog
+# Run photo-blog
 python3 skills/photo-blog/main.py <image_paths> [--theme THEME] [--max-highlights N] [--format all]
 
-# 运行 life-comic
+# Run life-comic
 python3 skills/life-comic/main.py <image_paths> [--theme THEME] [--panels N] [--format all]
 ```
 
@@ -28,23 +28,23 @@ python3 skills/life-comic/main.py <image_paths> [--theme THEME] [--panels N] [--
 
 ```
 image_blog/
-├── install.sh                    # 安装脚本（创建 symlinks 到 ~/.claude/skills/）
-├── update.sh                     # 更新脚本
+├── install.sh                    # Install script (creates symlinks to ~/.claude/skills/)
+├── update.sh                     # Update script
 ├── skills/
 │   ├── photo-blog/
-│   │   ├── SKILL.md              # Skill 描述文件
-│   │   ├── main.py               # CLI 入口
-│   │   ├── photo_analyzer.py     # Gemini 图片分析/打分
-│   │   ├── blog_generator.py     # 博客内容生成
-│   │   ├── html_renderer.py      # HTML 输出
-│   │   ├── png_renderer.py       # HiDPI PNG 输出（Playwright）
-│   │   ├── config.json.example   # 配置模板
+│   │   ├── SKILL.md              # Skill description
+│   │   ├── main.py               # CLI entry point
+│   │   ├── photo_analyzer.py     # Gemini image analysis/scoring
+│   │   ├── blog_generator.py     # Blog content generation
+│   │   ├── html_renderer.py      # HTML output
+│   │   ├── png_renderer.py       # HiDPI PNG output (Playwright)
+│   │   ├── config.json.example   # Config template
 │   │   └── requirements.txt
 │   └── life-comic/
 │       ├── SKILL.md
 │       ├── main.py
 │       ├── photo_analyzer.py
-│       ├── comic_generator.py    # Gemini 漫画生成
+│       ├── comic_generator.py    # Gemini comic generation
 │       ├── html_renderer.py
 │       ├── png_renderer.py
 │       ├── config.json.example
@@ -54,22 +54,22 @@ image_blog/
 
 ## Key Patterns
 
-- **Triple Output**: 每次生成同时产出 HTML + Markdown + PNG
-- **HiDPI PNG**: 通过 Playwright 截图 HTML 页面，2x 缩放
-- **图片分析**: Gemini 3 Pro 打分（0-100），多维度评估
-- **多样性优化**: 选图时避免重复场景，覆盖不同时间/地点
-- **Config**: `config.json` 存放 `COMPASS_CLIENT_TOKEN`，不提交到 Git
+- **Triple Output**: Each generation produces HTML + Markdown + PNG simultaneously
+- **HiDPI PNG**: Screenshots HTML pages via Playwright at 2x scale
+- **Image Analysis**: Gemini 3 Pro scoring (0-100), multi-dimensional evaluation
+- **Diversity Optimization**: Avoids duplicate scenes during selection, covers different times/locations
+- **Config**: `config.json` stores `COMPASS_CLIENT_TOKEN`, never committed to Git
 
 ## Code Conventions
 
-- Skill 源文件**纯英文**，不含中文字符
-- 运行时根据用户语言输出对应语言内容
-- 不向用户暴露 template_id 等内部字段
-- 错误时给出有帮助的提示（如"建议用 --theme 指定主题"）
+- Skill source files must be **pure English**, no Chinese characters
+- Runtime output adapts to user's language
+- Never expose internal fields like template_id to users
+- Provide helpful error messages (e.g., "try using --theme to specify a theme")
 
 ## Delivery Rules
 
-- 聊天中展示 **rich text** 版本
-- PNG 和 HTML 以**下载链接**形式提供，不 inline
-- HTML 链接标签做国际化（"for internal testing" / 对应语言）
-- 生成后建议用户尝试另一种格式（blog ↔ comic）
+- Display **rich text** version in chat
+- Provide PNG and HTML as **download links**, never inline
+- Internationalize HTML link labels ("for internal testing" / localized equivalent)
+- After generation, suggest the user try the other format (blog <-> comic)
