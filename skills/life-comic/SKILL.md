@@ -121,58 +121,83 @@ Pass `--theme` to guide comic theme. Falls back to auto-detected themes if photo
 In sandbox environment, Python scripts cannot call MCP tools directly (no MCP_PROXY_TOKEN in subprocess).
 Claude Code must orchestrate the workflow by calling MCP tools itself and passing results to the script.
 
+**CRITICAL**: Use the professional prompts exported from the Python engine — do NOT improvise your own analysis criteria.
+
 ### Step-by-step:
 
-1. **Read and analyze images** — Use your vision capability to read each photo with the Read tool,
-   then produce a JSON analysis for each photo with the following structure:
-   ```json
-   {
-     "all": [
-       {
-         "file": "/path/to/photo.jpg",
-         "scene_summary": "Friends laughing over hotpot",
-         "character_desc": "Three friends, casual clothes",
-         "action_desc": "Reaching for ingredients with chopsticks",
-         "emotion": "joyful, warm",
-         "environment": "Indoor hotpot restaurant, steamy",
-         "time_of_day": "evening",
-         "comic_panel_desc": "Wide shot of friends around a bubbling hotpot",
-         "score": 8.5,
-         "tier": "hero"
-       }
-     ],
-     "selected": [ ... ]
-   }
+1. **Export professional prompts** (run once per session, cache the output):
+   ```bash
+   python3 <SKILL_DIR>/main.py dummy --export-prompts 2>/dev/null
    ```
-   Save this as `analysis.json`.
+   This outputs JSON containing the exact `analysis_prompt` and `storyboard_prompt_template`
+   used by the Python analysis engine, along with `scoring_weights` and `tier_thresholds`.
 
-2. **Generate storyboard** — Based on the analysis, write a storyboard JSON:
-   ```json
-   {
-     "theme": "A Day of Flavors",
-     "style": "warm hand-drawn illustration",
-     "narrative": {
-       "title": "A Day of Flavors",
-       "opening": "Opening narrative text",
-       "closing": "Closing reflection"
-     },
-     "panels": [
-       {
-         "panel_number": 1,
-         "scene_description": "Comic panel description",
-         "dialogue": "Optional dialogue",
-         "emotion": "joyful",
-         "visual_note": "Warm tones, steam effects"
-       }
-     ]
-   }
-   ```
-   Save this as `storyboard.json`.
+2. **Analyze images using the exported `analysis_prompt`**:
+   - For each photo, use the Read tool to view it
+   - Apply the `analysis_prompt` criteria exactly as specified:
+     - Extract: scene_summary, character_desc, action_desc, emotion, environment, time_of_day, comic_panel_desc
+     - Score each photo on 3 axes using the exported `scoring_weights`:
+       comic_potential(0.35), visual_distinctness(0.30), narrative_weight(0.35)
+     - Calculate weighted composite score (0-10 scale)
+     - Assign tiers per `tier_thresholds`: star_moment(>=7.5), good_moment(>=6.0), average(>=4.0), skip(<4.0)
+   - Select top N panels with diversity optimization (emotion + environment + time_of_day variety)
+   - Save as `analysis.json`:
+     ```json
+     {
+       "all": [
+         {
+           "file": "/path/to/photo.jpg",
+           "scene_summary": "Friends laughing over hotpot",
+           "character_desc": "Three friends, casual clothes",
+           "action_desc": "Reaching for ingredients with chopsticks",
+           "emotion": "joyful, warm",
+           "environment": "Indoor hotpot restaurant, steamy",
+           "time_of_day": "evening",
+           "comic_panel_desc": "Wide shot of friends around a bubbling hotpot",
+           "score": 8.5,
+           "tier": "star_moment"
+         }
+       ],
+       "selected": [ ... ]
+     }
+     ```
 
-3. **Generate comic images** (optional) — Call `imagen_generate` MCP tool with reference photos
-   and comic prompts. Download results to a directory (e.g., `./comic_imgs/`).
+3. **Generate storyboard using the exported `storyboard_prompt_template`**:
+   - Take the `storyboard_prompt_template` and fill in the variables:
+     - `panels_json`: selected comic moments with index, scene, character, action, emotion, environment, time_of_day, comic_panel_desc
+     - `theme_instruction`: use theme template if user specified a theme, empty string otherwise
+     - `lang_instruction`: Chinese or English instruction based on user language
+     - `panel_count`: number of panels
+   - Generate storyboard JSON matching this **exact structure** (field names must match):
+     ```json
+     {
+       "theme": "A 2-6 word theme",
+       "emotional_arc": "Under 100 chars arc description",
+       "panels": [
+         {
+           "panel_index": 0,
+           "source_photo_index": 0,
+           "scene_description": "3-5 sentence detailed visual description (in English)",
+           "emotion_tag": "2-4 word emotion tag",
+           "panel_composition": "Composition suggestion"
+         }
+       ],
+       "narrative": {
+         "title": "Title matching the theme",
+         "body": "Under 250 chars poetic narrative"
+       },
+       "footer_date": "YYYY-MM-DD",
+       "suggested_themes": ["theme1", "theme2", "theme3"]
+     }
+     ```
+   - **CRITICAL**: panels array must have exactly one entry per selected moment
+   - Save as `storyboard.json`
 
-4. **Run the script** with pre-computed data:
+4. **Generate comic images** (optional):
+   - Call `imagen_generate` MCP tool with reference photos and comic prompts
+   - Download results to a directory (e.g., `./comic_imgs/`)
+
+5. **Run the script** with pre-computed data:
    ```bash
    python3 <SKILL_DIR>/main.py <image_dir> \
        --pre-analyzed analysis.json \
@@ -182,7 +207,7 @@ Claude Code must orchestrate the workflow by calling MCP tools itself and passin
        --format all
    ```
 
-5. **Upload and deliver** — Upload generated files and provide download links.
+6. **Upload and deliver** — Upload generated files and provide download links.
 
 ## Configuration
 

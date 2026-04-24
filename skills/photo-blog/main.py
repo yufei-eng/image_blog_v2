@@ -95,7 +95,26 @@ def main():
                         help="Pre-generated blog content JSON (skip MCP text generation)")
     parser.add_argument("--cover-path", default=None,
                         help="Pre-generated cover image path (skip MCP cover generation)")
+    parser.add_argument("--export-prompts", action="store_true",
+                        help="Export prompt templates as JSON and exit (for sandbox mode)")
     args = parser.parse_args()
+
+    if args.export_prompts:
+        from image_analyzer import ANALYSIS_PROMPT
+        from blog_generator import BLOG_GENERATION_PROMPT
+        prompts = {
+            "analysis_prompt": ANALYSIS_PROMPT,
+            "blog_generation_prompt_template": BLOG_GENERATION_PROMPT,
+            "blog_generation_variables": ["analysis_json", "highlights_json",
+                                           "theme_instruction", "lang_instruction",
+                                           "highlight_count"],
+            "scoring_weights": {"visual_appeal": 0.20, "story_value": 0.25,
+                               "emotion_intensity": 0.25, "uniqueness": 0.15,
+                               "technical_quality": 0.15},
+            "tier_thresholds": {"highlight": 8.0, "good": 6.5, "average": 4.5}
+        }
+        print(json.dumps(prompts, ensure_ascii=False, indent=2))
+        sys.exit(0)
 
     user_theme = args.theme or args.style
     max_hl = min(max(args.max_highlights, 1), 10)
@@ -182,7 +201,7 @@ def main():
             print(f"  Title: {blog_content.get('title', '?')}")
         else:
             print(f"\n[4/{total_steps}] Generating blog content...")
-            blog_content = generate_blog_content(all_dicts, highlight_dicts, date_str=date_str, user_theme=user_theme, lang=lang, target_count=len(highlight_dicts), mcp_client=mcp)
+            blog_content = generate_blog_content(all_dicts, highlight_dicts, date_str=date_str, user_theme=user_theme, lang=lang, target_count=len(highlight_dicts), mcp_client=mcp, uploader=uploader, highlight_paths=highlight_paths)
             print(f"  Title: {blog_content.get('title', '?')}")
             print(f"  Insights: {len(blog_content.get('insights', []))} items")
             actual_insights = len(blog_content.get("insights", []))

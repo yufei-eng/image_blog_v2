@@ -95,6 +95,8 @@ def generate_blog_content(
     lang: Optional[str] = None,
     target_count: Optional[int] = None,
     mcp_client: Optional[MCPClient] = None,
+    uploader=None,
+    highlight_paths: Optional[List[str]] = None,
 ) -> dict:
     """Generate blog content from photo analyses and selected highlights.
 
@@ -171,11 +173,27 @@ def generate_blog_content(
         highlight_count=highlight_count,
     )
 
+    image_urls = []
+    if highlight_paths and uploader:
+        from image_analyzer import _load_image_bytes_fixed
+        for hp in highlight_paths[:5]:
+            try:
+                img_data, mime = _load_image_bytes_fixed(hp)
+                fname = os.path.basename(hp).rsplit(".", 1)[0] + ".jpg"
+                url = uploader.upload_bytes(img_data, fname, mime)
+                image_urls.append(url)
+            except Exception as e:
+                print(f"  [WARN] Upload failed for blog visual context: {e}")
+
+    if not image_urls:
+        print("  [WARN] No highlight images uploaded, using fallback content")
+        return _fallback_content(highlights, date_str, lang)
+
     try:
         try:
             result = mcp_client.call_tool("batch_understand_images", {
                 "prompt": prompt,
-                "image_urls": [],
+                "image_urls": image_urls,
             })
         except Exception as e:
             print(f"ERROR: Blog generation failed: {e}")

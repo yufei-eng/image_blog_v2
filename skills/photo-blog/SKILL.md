@@ -119,52 +119,79 @@ Pass `--theme` to guide generation toward a specific angle. If the photos don't 
 In sandbox environment, Python scripts cannot call MCP tools directly (no MCP_PROXY_TOKEN in subprocess).
 Claude Code must orchestrate the workflow by calling MCP tools itself and passing results to the script.
 
+**CRITICAL**: Use the professional prompts exported from the Python engine — do NOT improvise your own analysis criteria.
+
 ### Step-by-step:
 
-1. **Read and analyze images** — Use your vision capability to read each photo with the Read tool,
-   then produce a JSON analysis for each photo with the following structure:
-   ```json
-   {
-     "all": [
-       {
-         "file": "/path/to/photo.jpg",
-         "scene": "A bustling night market with neon lights",
-         "people": "A couple browsing food stalls",
-         "action": "Selecting skewers from a vendor",
-         "mood": "lively, excited",
-         "location": "Night market street",
-         "time_of_day": "evening",
-         "objects": ["neon signs", "food stalls", "skewers"],
-         "narrative_hook": "The glow of neon against their smiles",
-         "orientation_correct": true,
-         "score": 8.5,
-         "tier": "hero"
-       }
-     ],
-     "highlights": [ ... ]
-   }
+1. **Export professional prompts** (run once per session, cache the output):
+   ```bash
+   python3 <SKILL_DIR>/main.py dummy --export-prompts 2>/dev/null
    ```
-   Save this as `analysis.json`.
+   This outputs JSON containing the exact `analysis_prompt` and `blog_generation_prompt_template`
+   used by the Python analysis engine, along with `scoring_weights` and `tier_thresholds`.
 
-2. **Generate blog content** — Based on the analysis, write a blog content JSON:
-   ```json
-   {
-     "title": "A poetic 3-6 word title",
-     "hero_image_index": 0,
-     "description": { "text": "2-3 sentence overview", "mood": "warm" },
-     "insights": [
-       { "photo_index": 0, "heading": "Short heading", "text": "2-3 sentence narrative" }
-     ],
-     "tips": ["Practical tip 1", "Practical tip 2"],
-     "footer_text": "A closing reflection"
-   }
-   ```
-   Save this as `blog.json`.
+2. **Analyze images using the exported `analysis_prompt`**:
+   - For each photo, use the Read tool to view it
+   - Apply the `analysis_prompt` criteria exactly as specified:
+     - Extract: scene, people, action, mood, location, time_of_day, objects, narrative_hook
+     - Score each photo on 5 axes using the exported `scoring_weights`:
+       visual_appeal(0.20), story_value(0.25), emotion_intensity(0.25),
+       uniqueness(0.15), technical_quality(0.15)
+     - Calculate weighted composite score (0-10 scale)
+     - Assign tiers per `tier_thresholds`: highlight(>=8.0), good(>=6.5), average(>=4.5), skip(<4.5)
+   - Select top N highlights with diversity optimization (prefer variety in mood, location, scene)
+   - Save as `analysis.json`:
+     ```json
+     {
+       "all": [
+         {
+           "file": "/path/to/photo.jpg",
+           "scene": "A bustling night market with neon lights",
+           "people": "A couple browsing food stalls",
+           "action": "Selecting skewers from a vendor",
+           "mood": "lively, excited",
+           "location": "Night market street",
+           "time_of_day": "evening",
+           "objects": ["neon signs", "food stalls", "skewers"],
+           "narrative_hook": "The glow of neon against their smiles",
+           "orientation_correct": true,
+           "score": 8.5,
+           "tier": "highlight"
+         }
+       ],
+       "highlights": [ ... ]
+     }
+     ```
 
-3. **Generate cover image** (optional) — Call `imagen_generate` MCP tool with a prompt
-   describing the desired cover style. Download the result and save as `cover.png`.
+3. **Generate blog content using the exported `blog_generation_prompt_template`**:
+   - Take the `blog_generation_prompt_template` and fill in the variables:
+     - `analysis_json`: top 30 from all analyses (scene/mood/location/action fields)
+     - `highlights_json`: selected highlights with index, scene, people, action, mood, location, objects, narrative_hook, score
+     - `theme_instruction`: use theme template if user specified a theme, empty string otherwise
+     - `lang_instruction`: Chinese or English instruction based on user language
+     - `highlight_count`: number of highlights
+   - Generate blog JSON matching this **exact structure** (field names must match):
+     ```json
+     {
+       "title": "A poetic 3-6 word title",
+       "hero_image_index": 0,
+       "description": { "text": "Under 150 chars atmospheric sentence", "image_index": 0 },
+       "insights": [
+         { "text": "Under 150 chars evocative caption", "image_index": 0 }
+       ],
+       "tip": "Under 150 chars practical tip",
+       "footer_date": "YYYY-MM-DD",
+       "suggested_themes": ["theme1", "theme2", "theme3"]
+     }
+     ```
+   - **CRITICAL**: insights array must have exactly one entry per highlight photo
+   - Save as `blog.json`
 
-4. **Run the script** with pre-computed data:
+4. **Generate cover image** (optional):
+   - Call `imagen_generate` MCP tool with a prompt describing the desired cover style
+   - Download the result and save as `cover.png`
+
+5. **Run the script** with pre-computed data:
    ```bash
    python3 <SKILL_DIR>/main.py <image_dir> \
        --pre-analyzed analysis.json \
@@ -174,7 +201,7 @@ Claude Code must orchestrate the workflow by calling MCP tools itself and passin
        --format all
    ```
 
-5. **Upload and deliver** — Upload generated files and provide download links.
+6. **Upload and deliver** — Upload generated files and provide download links.
 
 ## Configuration
 

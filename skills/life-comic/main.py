@@ -84,7 +84,24 @@ def main():
                         help="Pre-generated storyboard JSON (skip MCP storyboard generation)")
     parser.add_argument("--comic-images-dir", default=None,
                         help="Directory with pre-generated comic images (skip MCP image generation)")
+    parser.add_argument("--export-prompts", action="store_true",
+                        help="Export prompt templates as JSON and exit (for sandbox mode)")
     args = parser.parse_args()
+
+    if args.export_prompts:
+        from image_analyzer import COMIC_ANALYSIS_PROMPT
+        from comic_generator import STORYBOARD_PROMPT
+        prompts = {
+            "analysis_prompt": COMIC_ANALYSIS_PROMPT,
+            "storyboard_prompt_template": STORYBOARD_PROMPT,
+            "storyboard_variables": ["panels_json", "theme_instruction",
+                                      "lang_instruction", "panel_count"],
+            "scoring_weights": {"comic_potential": 0.35, "visual_distinctness": 0.30,
+                               "narrative_weight": 0.35},
+            "tier_thresholds": {"star_moment": 7.5, "good_moment": 6.0, "average": 4.0}
+        }
+        print(json.dumps(prompts, ensure_ascii=False, indent=2))
+        sys.exit(0)
 
     user_theme = args.theme or args.style
     panel_count = min(max(args.panels, 1), 10)
@@ -173,7 +190,7 @@ def main():
         else:
             effective_panels = len(selected_dicts)
             print(f"\n[4/5] Generating storyboard and narrative...")
-            storyboard = generate_storyboard(selected_dicts, date_str=date_str, user_theme=user_theme, lang=lang, target_panel_count=effective_panels, mcp_client=mcp)
+            storyboard = generate_storyboard(selected_dicts, date_str=date_str, user_theme=user_theme, lang=lang, target_panel_count=effective_panels, mcp_client=mcp, uploader=uploader, panel_photo_paths=ref_paths)
             print(f"  Theme: {storyboard.get('theme', '?')}")
             print(f"  Title: {storyboard.get('narrative', {}).get('title', '?')}")
             print(f"  Panels: {len(storyboard.get('panels', []))}")

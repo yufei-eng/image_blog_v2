@@ -121,7 +121,7 @@ def _detect_lang(text: str) -> str:
     return "zh" if cjk / max(len(text.replace(" ", "")), 1) > 0.15 else "en"
 
 
-def generate_storyboard(panel_moments: List[dict], date_str: Optional[str] = None, user_theme: Optional[str] = None, lang: Optional[str] = None, target_panel_count: Optional[int] = None, mcp_client: Optional[MCPClient] = None) -> dict:
+def generate_storyboard(panel_moments: List[dict], date_str: Optional[str] = None, user_theme: Optional[str] = None, lang: Optional[str] = None, target_panel_count: Optional[int] = None, mcp_client: Optional[MCPClient] = None, uploader: Optional[FileUploader] = None, panel_photo_paths: Optional[List[str]] = None) -> dict:
     """Generate storyboard script and narrative text."""
     from datetime import date
     if not date_str:
@@ -175,11 +175,26 @@ def generate_storyboard(panel_moments: List[dict], date_str: Optional[str] = Non
         panel_count=panel_count,
     )
 
+    image_urls = []
+    if panel_photo_paths and uploader:
+        for pp in panel_photo_paths[:8]:
+            try:
+                img_data, mime = _load_image_bytes(pp)
+                fname = os.path.basename(pp).rsplit(".", 1)[0] + ".jpg"
+                url = uploader.upload_bytes(img_data, fname, mime)
+                image_urls.append(url)
+            except Exception as e:
+                print(f"  [WARN] Upload failed for storyboard visual context: {e}")
+
+    if not image_urls:
+        print("  [WARN] No panel images uploaded, using fallback storyboard")
+        return _fallback_storyboard(panel_moments, date_str, lang)
+
     try:
         try:
             result = mcp_client.call_tool("batch_understand_images", {
                 "prompt": prompt,
-                "image_urls": [],
+                "image_urls": image_urls,
             })
         except Exception as e:
             print(f"ERROR: Storyboard generation failed: {e}")
