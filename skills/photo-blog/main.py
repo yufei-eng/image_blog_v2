@@ -5,11 +5,15 @@ Usage:
     python3 main.py <image_dir_or_files> [--max-highlights 10] [--output blog.html] [--date 2026-04-13]
         [--theme "food journey"] [--format html] [--skip-cover] [--output-dir .]
 
+    Sandbox mode (pre-analyzed data from Claude Code):
+    python3 main.py <image_dir> --pre-analyzed analysis.json --blog-content blog.json
+        [--cover-path cover.png] [--output blog.html] [--format all]
+
 Workflow:
-    1. Batch analyze photos via MCP batch_understand_images
+    1. Batch analyze photos via MCP batch_understand_images (or load from --pre-analyzed)
     2. Score and select highlight photos (diversity-optimized)
-    3. Generate blog narrative via MCP
-    4. Generate AI cover image via MCP imagen_generate
+    3. Generate blog narrative via MCP (or load from --blog-content)
+    4. Generate AI cover image via MCP imagen_generate (or use --cover-path)
     5. Render to selected format (HTML / rich text / PNG / all)
 """
 
@@ -85,6 +89,12 @@ def main():
                         help="Skip AI cover image generation, use original photo as hero")
     parser.add_argument("--output-dir", default=None,
                         help="Directory for generated images (default: same as --output)")
+    parser.add_argument("--pre-analyzed", default=None,
+                        help="Pre-analyzed JSON file (skip MCP image analysis)")
+    parser.add_argument("--blog-content", default=None,
+                        help="Pre-generated blog content JSON (skip MCP text generation)")
+    parser.add_argument("--cover-path", default=None,
+                        help="Pre-generated cover image path (skip MCP cover generation)")
     args = parser.parse_args()
 
     user_theme = args.theme or args.style
@@ -98,11 +108,10 @@ def main():
     if not image_paths:
         print("No images found.")
         sys.exit(1)
-    skip_cover = args.skip_cover or generate_cover_image is None
+    skip_cover = args.skip_cover or generate_cover_image is None or args.cover_path is not None
+    needs_mcp = not args.pre_analyzed or not args.blog_content or (not skip_cover and not args.cover_path)
     total_steps = 4 if skip_cover else 5
     print(f"\n[1/{total_steps}] Found {len(image_paths)} images")
-
-    print(f"\n[2/{total_steps}] Analyzing photos via MCP batch_understand_images...")
 
     cfg = {}
     config_path = os.path.join(SCRIPT_DIR, "config.json")
@@ -110,28 +119,44 @@ def main():
         with open(config_path) as f:
             cfg = json.load(f)
 
-    mcp = create_mcp_client(cfg)
-    mcp.connect()
-    uploader = FileUploader(cfg)
+    mcp = None
+    uploader = None
+    if needs_mcp:
+        mcp = create_mcp_client(cfg)
+        mcp.connect()
+        uploader = FileUploader(cfg)
 
     try:
-        analyses = analyze_photos(image_paths, mcp_client=mcp, uploader=uploader)
-        print(f"  Analyzed {len(analyses)} photos")
+        if args.pre_analyzed:
+            print(f"\n[2/{total_steps}] Loading pre-analyzed data from {args.pre_analyzed}...")
+            with open(args.pre_analyzed, encoding="utf-8") as f:
+                pre_data = json.load(f)
+            all_dicts = pre_data.get("all", pre_data.get("highlights", []))
+            highlight_dicts = pre_data.get("highlights", all_dicts)
+            highlight_paths = [h["file"] for h in highlight_dicts]
+            orientation_flags = [h.get("orientation_correct", True) for h in highlight_dicts]
+            print(f"  Loaded {len(all_dicts)} analyses, {len(highlight_dicts)} highlights")
+        else:
+            print(f"\n[2/{total_steps}] Analyzing photos via MCP batch_understand_images...")
+            analyses = analyze_photos(image_paths, mcp_client=mcp, uploader=uploader)
+            print(f"  Analyzed {len(analyses)} photos")
 
-        effective_max = min(max_hl, len(analyses))
-        print(f"\n[3/{total_steps}] Selecting top {effective_max} highlights...")
-        highlights = select_highlights(analyses, effective_max)
-        print(f"  Selected {len(highlights)} highlights:")
-        for i, h in enumerate(highlights):
-            print(f"    #{i+1} [{h.score.tier}] {h.score.composite:.1f} — {h.scene}")
+            effective_max = min(max_hl, len(analyses))
+            print(f"\n[3/{total_steps}] Selecting top {effective_max} highlights...")
+            highlights = select_highlights(analyses, effective_max)
+            print(f"  Selected {len(highlights)} highlights:")
+            for i, h in enumerate(highlights):
+                print(f"    #{i+1} [{h.score.tier}] {h.score.composite:.1f} — {h.scene}")
 
-        all_dicts = [analysis_to_dict(a) for a in analyses]
-        highlight_dicts = [analysis_to_dict(h) for h in highlights]
+            all_dicts = [analysis_to_dict(a) for a in analyses]
+            highlight_dicts = [analysis_to_dict(h) for h in highlights]
+            highlight_paths = [h.file_path for h in highlights]
+            orientation_flags = [h.orientation_correct for h in highlights]
 
-        if args.save_analysis:
-            with open(args.save_analysis, "w", encoding="utf-8") as f:
-                json.dump({"all": all_dicts, "highlights": highlight_dicts}, f, ensure_ascii=False, indent=2)
-            print(f"  Analysis saved to {args.save_analysis}")
+            if args.save_analysis:
+                with open(args.save_analysis, "w", encoding="utf-8") as f:
+                    json.dump({"all": all_dicts, "highlights": highlight_dicts}, f, ensure_ascii=False, indent=2)
+                print(f"  Analysis saved to {args.save_analysis}")
 
         date_str = args.date
         if not date_str:
@@ -150,33 +175,39 @@ def main():
         if user_theme:
             print(f"\n  Theme: '{user_theme}' (lang={lang})")
 
-        print(f"\n[4/{total_steps}] Generating blog content...")
-        blog_content = generate_blog_content(all_dicts, highlight_dicts, date_str=date_str, user_theme=user_theme, lang=lang, target_count=len(highlight_dicts), mcp_client=mcp)
-        print(f"  Title: {blog_content.get('title', '?')}")
-        print(f"  Insights: {len(blog_content.get('insights', []))} items")
-        actual_insights = len(blog_content.get("insights", []))
-        if actual_insights < len(highlight_dicts):
-            print(f"  [WARN] Blog returned {actual_insights} insights, expected {len(highlight_dicts)}")
+        if args.blog_content:
+            print(f"\n[4/{total_steps}] Loading blog content from {args.blog_content}...")
+            with open(args.blog_content, encoding="utf-8") as f:
+                blog_content = json.load(f)
+            print(f"  Title: {blog_content.get('title', '?')}")
+        else:
+            print(f"\n[4/{total_steps}] Generating blog content...")
+            blog_content = generate_blog_content(all_dicts, highlight_dicts, date_str=date_str, user_theme=user_theme, lang=lang, target_count=len(highlight_dicts), mcp_client=mcp)
+            print(f"  Title: {blog_content.get('title', '?')}")
+            print(f"  Insights: {len(blog_content.get('insights', []))} items")
+            actual_insights = len(blog_content.get("insights", []))
+            if actual_insights < len(highlight_dicts):
+                print(f"  [WARN] Blog returned {actual_insights} insights, expected {len(highlight_dicts)}")
 
         suggested = blog_content.get("suggested_themes", [])
         if suggested:
             print(f"  Suggested themes: {', '.join(suggested)}")
 
-        highlight_paths = [h.file_path for h in highlights]
-        orientation_flags = [h.orientation_correct for h in highlights]
         output_base = os.path.splitext(args.output)[0]
         output_dir = args.output_dir or os.path.dirname(os.path.abspath(args.output)) or "."
         os.makedirs(output_dir, exist_ok=True)
 
-        cover_path = None
-        if not skip_cover:
+        cover_path = args.cover_path
+        if cover_path:
+            print(f"\n  Using pre-generated cover: {cover_path}")
+        elif not skip_cover:
             print(f"\n[5/{total_steps}] Generating AI cover image...")
             cover_path = generate_cover_image(blog_content, highlight_paths, output_dir=output_dir, lang=lang, mcp_client=mcp, uploader=uploader)
             if cover_path:
                 print(f"  Cover generated: {cover_path}")
             else:
                 print(f"  Cover generation failed, falling back to original photo")
-        elif not args.skip_cover:
+        elif not args.skip_cover and not args.cover_path:
             print(f"\n  [SKIP] cover_generator not available, using original photo as hero")
 
         generated_files = {}
@@ -227,8 +258,10 @@ def main():
             print(f'  Link text: "\U0001f4c4 [{_html_label}](<url>)"')
         print(f"  Do NOT embed images inline with ![...]. Provide download links only.")
     finally:
-        mcp.close()
-        uploader.close()
+        if mcp:
+            mcp.close()
+        if uploader:
+            uploader.close()
 
 
 if __name__ == "__main__":

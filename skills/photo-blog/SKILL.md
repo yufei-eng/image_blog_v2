@@ -58,6 +58,20 @@ python3 <SKILL_DIR>/main.py <image_dir_or_files> \
     [--save-analysis analysis.json]
 ```
 
+### Sandbox Mode (Pre-analyzed Data)
+
+When running in sandbox environment (MCP tools not accessible from Python subprocess),
+Claude Code should orchestrate the workflow and pass pre-computed data to the script:
+
+```bash
+python3 <SKILL_DIR>/main.py <image_dir> \
+    --pre-analyzed analysis.json \
+    --blog-content blog.json \
+    --cover-path cover.png \
+    --output blog.html \
+    --format all
+```
+
 ### Arguments
 
 | Arg | Description | Default |
@@ -71,6 +85,9 @@ python3 <SKILL_DIR>/main.py <image_dir_or_files> \
 | `--format` | Output format: `html` / `richtext` / `png` / `all` | `all` |
 | `--skip-cover` | Skip AI cover generation, use original photo as hero | false |
 | `--save-analysis` | Save analysis JSON for debugging | none |
+| `--pre-analyzed` | Load pre-analyzed photo data from JSON (skip MCP analysis) | none |
+| `--blog-content` | Load pre-generated blog content from JSON (skip MCP text gen) | none |
+| `--cover-path` | Use pre-generated cover image (skip MCP cover gen) | none |
 
 ### Output Format Selection
 
@@ -96,6 +113,68 @@ Supports **1 to 10** input images. Works with a single photo up to large albums 
 ### Theme / Style Keywords
 
 Pass `--theme` to guide generation toward a specific angle. If the photos don't match the theme (fewer than 2 relevant photos), the skill falls back to auto-detected themes and returns `suggested_themes` with 3 alternatives.
+
+## Sandbox Execution Workflow
+
+In sandbox environment, Python scripts cannot call MCP tools directly (no MCP_PROXY_TOKEN in subprocess).
+Claude Code must orchestrate the workflow by calling MCP tools itself and passing results to the script.
+
+### Step-by-step:
+
+1. **Read and analyze images** — Use your vision capability to read each photo with the Read tool,
+   then produce a JSON analysis for each photo with the following structure:
+   ```json
+   {
+     "all": [
+       {
+         "file": "/path/to/photo.jpg",
+         "scene": "A bustling night market with neon lights",
+         "people": "A couple browsing food stalls",
+         "action": "Selecting skewers from a vendor",
+         "mood": "lively, excited",
+         "location": "Night market street",
+         "time_of_day": "evening",
+         "objects": ["neon signs", "food stalls", "skewers"],
+         "narrative_hook": "The glow of neon against their smiles",
+         "orientation_correct": true,
+         "score": 8.5,
+         "tier": "hero"
+       }
+     ],
+     "highlights": [ ... ]
+   }
+   ```
+   Save this as `analysis.json`.
+
+2. **Generate blog content** — Based on the analysis, write a blog content JSON:
+   ```json
+   {
+     "title": "A poetic 3-6 word title",
+     "hero_image_index": 0,
+     "description": { "text": "2-3 sentence overview", "mood": "warm" },
+     "insights": [
+       { "photo_index": 0, "heading": "Short heading", "text": "2-3 sentence narrative" }
+     ],
+     "tips": ["Practical tip 1", "Practical tip 2"],
+     "footer_text": "A closing reflection"
+   }
+   ```
+   Save this as `blog.json`.
+
+3. **Generate cover image** (optional) — Call `imagen_generate` MCP tool with a prompt
+   describing the desired cover style. Download the result and save as `cover.png`.
+
+4. **Run the script** with pre-computed data:
+   ```bash
+   python3 <SKILL_DIR>/main.py <image_dir> \
+       --pre-analyzed analysis.json \
+       --blog-content blog.json \
+       --cover-path cover.png \
+       --output blog.html \
+       --format all
+   ```
+
+5. **Upload and deliver** — Upload generated files and provide download links.
 
 ## Configuration
 

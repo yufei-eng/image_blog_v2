@@ -5,11 +5,15 @@ Usage:
     python3 main.py <image_dir_or_files> [--panels 8] [--output comic.html] [--date 2026-04-13]
         [--theme "food journey"] [--format html]
 
+    Sandbox mode (pre-analyzed data from Claude Code):
+    python3 main.py <image_dir> --pre-analyzed analysis.json --storyboard storyboard.json
+        [--comic-images-dir ./comic_imgs] [--output comic.html] [--format all]
+
 Workflow:
-    1. Batch analyze photos via MCP batch_understand_images (identify comic-worthy moments)
+    1. Batch analyze photos via MCP batch_understand_images (or load from --pre-analyzed)
     2. Select top moments with narrative diversity
-    3. Generate storyboard script and emotional narrative via MCP
-    4. Generate multi-panel comic image via MCP imagen_generate
+    3. Generate storyboard script and emotional narrative via MCP (or load from --storyboard)
+    4. Generate multi-panel comic image via MCP imagen_generate (or use --comic-images-dir)
     5. Render to selected format (HTML / rich text / PNG / all)
 """
 
@@ -74,6 +78,12 @@ def main():
     parser.add_argument("--style", default=None, help="Style keyword (alias for --theme)")
     parser.add_argument("--format", default="all", choices=["html", "richtext", "png", "all"],
                         help="Output format: html, richtext (markdown for chat), png, all (default)")
+    parser.add_argument("--pre-analyzed", default=None,
+                        help="Pre-analyzed JSON file (skip MCP image analysis)")
+    parser.add_argument("--storyboard", default=None,
+                        help="Pre-generated storyboard JSON (skip MCP storyboard generation)")
+    parser.add_argument("--comic-images-dir", default=None,
+                        help="Directory with pre-generated comic images (skip MCP image generation)")
     args = parser.parse_args()
 
     user_theme = args.theme or args.style
@@ -89,7 +99,8 @@ def main():
         sys.exit(1)
     print(f"\n[1/5] Found {len(image_paths)} images")
 
-    print(f"\n[2/5] Analyzing photos for comic moments via MCP...")
+    skip_image_gen = args.skip_image_gen or args.comic_images_dir is not None
+    needs_mcp = not args.pre_analyzed or not args.storyboard or (not skip_image_gen and not args.comic_images_dir)
 
     cfg = {}
     config_path = os.path.join(SCRIPT_DIR, "config.json")
@@ -100,28 +111,42 @@ def main():
                 cfg = json.load(f)
             break
 
-    mcp = create_mcp_client(cfg)
-    mcp.connect()
-    uploader = FileUploader(cfg)
+    mcp = None
+    uploader = None
+    if needs_mcp:
+        mcp = create_mcp_client(cfg)
+        mcp.connect()
+        uploader = FileUploader(cfg)
 
     try:
-        moments = analyze_photos(image_paths, mcp_client=mcp, uploader=uploader)
-        print(f"  Analyzed {len(moments)} photos")
+        if args.pre_analyzed:
+            print(f"\n[2/5] Loading pre-analyzed data from {args.pre_analyzed}...")
+            with open(args.pre_analyzed, encoding="utf-8") as f:
+                pre_data = json.load(f)
+            all_moments = pre_data.get("all", pre_data.get("selected", []))
+            selected_dicts = pre_data.get("selected", all_moments)
+            ref_paths = [m["file"] for m in selected_dicts]
+            print(f"  Loaded {len(all_moments)} analyses, {len(selected_dicts)} selected")
+        else:
+            print(f"\n[2/5] Analyzing photos for comic moments via MCP...")
+            moments = analyze_photos(image_paths, mcp_client=mcp, uploader=uploader)
+            print(f"  Analyzed {len(moments)} photos")
 
-        effective_panels = min(panel_count, len(moments))
-        print(f"\n[3/5] Selecting top {effective_panels} comic panels...")
-        selected = select_comic_panels(moments, effective_panels)
-        print(f"  Selected {len(selected)} panels:")
-        for i, m in enumerate(selected):
-            print(f"    #{i+1} [{m.tier}] {m.composite_score:.1f} — {m.scene_summary}")
+            effective_panels = min(panel_count, len(moments))
+            print(f"\n[3/5] Selecting top {effective_panels} comic panels...")
+            selected = select_comic_panels(moments, effective_panels)
+            print(f"  Selected {len(selected)} panels:")
+            for i, m in enumerate(selected):
+                print(f"    #{i+1} [{m.tier}] {m.composite_score:.1f} — {m.scene_summary}")
 
-        selected_dicts = [moment_to_dict(m) for m in selected]
+            selected_dicts = [moment_to_dict(m) for m in selected]
+            ref_paths = [m.file_path for m in selected]
 
-        if args.save_analysis:
-            all_dicts = [moment_to_dict(m) for m in moments]
-            with open(args.save_analysis, "w", encoding="utf-8") as f:
-                json.dump({"all": all_dicts, "selected": selected_dicts}, f, ensure_ascii=False, indent=2)
-            print(f"  Analysis saved to {args.save_analysis}")
+            if args.save_analysis:
+                all_dicts = [moment_to_dict(m) for m in moments]
+                with open(args.save_analysis, "w", encoding="utf-8") as f:
+                    json.dump({"all": all_dicts, "selected": selected_dicts}, f, ensure_ascii=False, indent=2)
+                print(f"  Analysis saved to {args.save_analysis}")
 
         date_str = args.date
         if not date_str:
@@ -140,24 +165,41 @@ def main():
         if user_theme:
             print(f"\n  Theme: '{user_theme}' (lang={lang})")
 
-        print(f"\n[4/5] Generating storyboard and narrative...")
-        storyboard = generate_storyboard(selected_dicts, date_str=date_str, user_theme=user_theme, lang=lang, target_panel_count=effective_panels, mcp_client=mcp)
-        print(f"  Theme: {storyboard.get('theme', '?')}")
-        print(f"  Title: {storyboard.get('narrative', {}).get('title', '?')}")
-        print(f"  Panels: {len(storyboard.get('panels', []))}")
-        actual_panels = len(storyboard.get("panels", []))
-        if actual_panels < effective_panels:
-            print(f"  [WARN] Storyboard returned {actual_panels} panels, expected {effective_panels}")
+        if args.storyboard:
+            print(f"\n[4/5] Loading storyboard from {args.storyboard}...")
+            with open(args.storyboard, encoding="utf-8") as f:
+                storyboard = json.load(f)
+            print(f"  Title: {storyboard.get('narrative', {}).get('title', '?')}")
+        else:
+            effective_panels = len(selected_dicts)
+            print(f"\n[4/5] Generating storyboard and narrative...")
+            storyboard = generate_storyboard(selected_dicts, date_str=date_str, user_theme=user_theme, lang=lang, target_panel_count=effective_panels, mcp_client=mcp)
+            print(f"  Theme: {storyboard.get('theme', '?')}")
+            print(f"  Title: {storyboard.get('narrative', {}).get('title', '?')}")
+            print(f"  Panels: {len(storyboard.get('panels', []))}")
+            actual_panels = len(storyboard.get("panels", []))
+            if actual_panels < effective_panels:
+                print(f"  [WARN] Storyboard returned {actual_panels} panels, expected {effective_panels}")
 
         suggested = storyboard.get("suggested_themes", [])
         if suggested:
             print(f"  Suggested themes: {', '.join(suggested)}")
 
         comic_image_path = None
-        if not args.skip_image_gen:
+        if args.comic_images_dir:
+            imgs = sorted([
+                os.path.join(args.comic_images_dir, f)
+                for f in os.listdir(args.comic_images_dir)
+                if os.path.splitext(f)[1].lower() in IMAGE_EXTS
+            ])
+            if imgs:
+                comic_image_path = imgs[0]
+                print(f"\n[5/5] Using pre-generated comic image: {comic_image_path}")
+            else:
+                print(f"\n[5/5] No comic images found in {args.comic_images_dir}")
+        elif not skip_image_gen:
             print(f"\n[5/5] Generating comic image via MCP imagen_generate...")
             os.makedirs(args.output_dir, exist_ok=True)
-            ref_paths = [m.file_path for m in selected]
             comic_image_path = generate_comic_image(storyboard, ref_paths, args.output_dir, mcp_client=mcp, uploader=uploader)
             if comic_image_path:
                 print(f"  Comic image: {comic_image_path}")
@@ -166,7 +208,6 @@ def main():
         else:
             print(f"\n[5/5] Skipping comic image generation (--skip-image-gen)")
 
-        ref_paths = [m.file_path for m in selected]
         output_base = os.path.splitext(args.output)[0]
 
         generated_files = {}
@@ -220,8 +261,10 @@ def main():
             print(f'  Link text: "\U0001f3a8 [Comic art](<url>)"')
         print(f"  Do NOT embed images inline with ![...]. Provide download links only.")
     finally:
-        mcp.close()
-        uploader.close()
+        if mcp:
+            mcp.close()
+        if uploader:
+            uploader.close()
 
 
 if __name__ == "__main__":

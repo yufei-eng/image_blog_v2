@@ -58,6 +58,20 @@ python3 <SKILL_DIR>/main.py <image_dir_or_files> \
     [--skip-image-gen]
 ```
 
+### Sandbox Mode (Pre-analyzed Data)
+
+When running in sandbox environment (MCP tools not accessible from Python subprocess),
+Claude Code should orchestrate the workflow and pass pre-computed data to the script:
+
+```bash
+python3 <SKILL_DIR>/main.py <image_dir> \
+    --pre-analyzed analysis.json \
+    --storyboard storyboard.json \
+    --comic-images-dir ./comic_imgs \
+    --output comic.html \
+    --format all
+```
+
 ### Arguments
 
 | Arg | Description | Default |
@@ -72,6 +86,9 @@ python3 <SKILL_DIR>/main.py <image_dir_or_files> \
 | `--format` | Output format: `html` / `richtext` / `png` / `all` | `all` |
 | `--save-analysis` | Save analysis JSON for debugging | none |
 | `--skip-image-gen` | Skip comic image generation (storyboard only) | false |
+| `--pre-analyzed` | Load pre-analyzed moment data from JSON (skip MCP analysis) | none |
+| `--storyboard` | Load pre-generated storyboard from JSON (skip MCP storyboard gen) | none |
+| `--comic-images-dir` | Directory with pre-generated comic images (skip MCP image gen) | none |
 
 ### Output Format Selection
 
@@ -98,6 +115,74 @@ Supports **1 to 10** panels. The grid layout adapts automatically:
 ### Theme / Style Keywords
 
 Pass `--theme` to guide comic theme. Falls back to auto-detected themes if photos don't match, with `suggested_themes` providing 3 alternatives.
+
+## Sandbox Execution Workflow
+
+In sandbox environment, Python scripts cannot call MCP tools directly (no MCP_PROXY_TOKEN in subprocess).
+Claude Code must orchestrate the workflow by calling MCP tools itself and passing results to the script.
+
+### Step-by-step:
+
+1. **Read and analyze images** — Use your vision capability to read each photo with the Read tool,
+   then produce a JSON analysis for each photo with the following structure:
+   ```json
+   {
+     "all": [
+       {
+         "file": "/path/to/photo.jpg",
+         "scene_summary": "Friends laughing over hotpot",
+         "character_desc": "Three friends, casual clothes",
+         "action_desc": "Reaching for ingredients with chopsticks",
+         "emotion": "joyful, warm",
+         "environment": "Indoor hotpot restaurant, steamy",
+         "time_of_day": "evening",
+         "comic_panel_desc": "Wide shot of friends around a bubbling hotpot",
+         "score": 8.5,
+         "tier": "hero"
+       }
+     ],
+     "selected": [ ... ]
+   }
+   ```
+   Save this as `analysis.json`.
+
+2. **Generate storyboard** — Based on the analysis, write a storyboard JSON:
+   ```json
+   {
+     "theme": "A Day of Flavors",
+     "style": "warm hand-drawn illustration",
+     "narrative": {
+       "title": "A Day of Flavors",
+       "opening": "Opening narrative text",
+       "closing": "Closing reflection"
+     },
+     "panels": [
+       {
+         "panel_number": 1,
+         "scene_description": "Comic panel description",
+         "dialogue": "Optional dialogue",
+         "emotion": "joyful",
+         "visual_note": "Warm tones, steam effects"
+       }
+     ]
+   }
+   ```
+   Save this as `storyboard.json`.
+
+3. **Generate comic images** (optional) — Call `imagen_generate` MCP tool with reference photos
+   and comic prompts. Download results to a directory (e.g., `./comic_imgs/`).
+
+4. **Run the script** with pre-computed data:
+   ```bash
+   python3 <SKILL_DIR>/main.py <image_dir> \
+       --pre-analyzed analysis.json \
+       --storyboard storyboard.json \
+       --comic-images-dir ./comic_imgs \
+       --output comic.html \
+       --format all
+   ```
+
+5. **Upload and deliver** — Upload generated files and provide download links.
 
 ## Configuration
 
