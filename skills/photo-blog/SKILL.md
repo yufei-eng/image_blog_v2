@@ -190,11 +190,11 @@ Create `config.json` in the same directory as `main.py` for local MCP server con
 ```json
 {
   "mcp_server": {
-    "url": "http://localhost:8080/sse",
+    "url": "<your_local_mcpserver_sse_endpoint>",
     "timeout": 300
   },
   "file_upload": {
-    "url": "http://beeai.test.shopee.io/inbeeai/api/v1/media/upload",
+    "url": "<your_file_upload_endpoint>",
     "timeout": 60
   }
 }
