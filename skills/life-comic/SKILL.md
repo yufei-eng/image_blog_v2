@@ -186,23 +186,29 @@ Claude Code must orchestrate the workflow by calling MCP tools itself and passin
 
 ## Configuration
 
-The skill requires a `config.json` in the same directory as `main.py`. Copy from `config.json.example` and fill in the Compass API token:
+### Sandbox (online)
+
+No `config.json` needed. Claude Code orchestrates MCP tools directly and passes results
+to the script via `--pre-analyzed`, `--storyboard`, `--comic-images-dir` parameters.
+
+### Local development
+
+Create `config.json` in the same directory as `main.py` for local MCP server connection:
 
 ```json
 {
-  "compass_api": {
-    "base_url": "https://compass-api.example.com/v1",
-    "service_name": "erhe-pm-aigc",
-    "client_token": "<YOUR_TOKEN>",
-    "understanding_model": "gemini-3-pro-preview",
-    "generation_model": "gemini-3.1-flash-image-preview"
+  "mcp_server": {
+    "url": "http://localhost:8080/sse",
+    "timeout": 300
+  },
+  "file_upload": {
+    "url": "http://beeai.test.shopee.io/inbeeai/api/v1/media/upload",
+    "timeout": 60
   }
 }
 ```
 
-Alternatively, set the `COMPASS_CLIENT_TOKEN` environment variable (takes precedence over config file).
-
-If `config.json` is missing and the env var is not set, the script exits with `ERROR: Compass API client_token not found.` — create the config file before running.
+Environment variable overrides: `MCP_SERVER_URL`, `FILE_UPLOAD_URL`.
 
 ## Capabilities
 
