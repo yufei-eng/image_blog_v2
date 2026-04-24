@@ -10,10 +10,12 @@ import os
 import sys
 from typing import Dict, List, Optional
 
-from google import genai
-from google.genai import types
-
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SHARED_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), "shared")
+if SHARED_DIR not in sys.path:
+    sys.path.insert(0, SHARED_DIR)
+
+from mcp_client import MCPClient, extract_text_content
 
 
 def _load_config() -> dict:
@@ -22,21 +24,6 @@ def _load_config() -> dict:
         with open(config_path) as f:
             return json.load(f)
     return {}
-
-
-def _get_client(cfg: dict):
-    api_cfg = cfg.get("compass_api", {})
-    token = (os.environ.get("COMPASS_CLIENT_TOKEN")
-             or os.environ.get("COMPASS_API_KEY")
-             or os.environ.get("ANTHROPIC_API_KEY")
-             or os.environ.get("GOOGLE_API_KEY")
-             or os.environ.get("GEMINI_API_KEY")
-             or api_cfg.get("client_token", ""))
-    base_url = (os.environ.get("COMPASS_BASE_URL")
-                or os.environ.get("ANTHROPIC_BASE_URL")
-                or api_cfg.get("base_url", ""))
-    http_opts = types.HttpOptions(base_url=base_url) if base_url else None
-    return genai.Client(api_key=token, http_options=http_opts)
 
 
 BLOG_GENERATION_PROMPT = """You are a content creator with both artistic sensibility and lifestyle aesthetics. Based on the following photo analysis data, generate a "Photo Blog" post.
@@ -107,6 +94,7 @@ def generate_blog_content(
     user_theme: Optional[str] = None,
     lang: Optional[str] = None,
     target_count: Optional[int] = None,
+    mcp_client: Optional[MCPClient] = None,
 ) -> dict:
     """Generate blog content from photo analyses and selected highlights.
 
@@ -126,9 +114,13 @@ def generate_blog_content(
 
     highlight_count = target_count if target_count is not None else len(highlights)
 
+    from mcp_client import create_mcp_client
+
     cfg = _load_config()
-    client = _get_client(cfg)
-    model = cfg.get("compass_api", {}).get("understanding_model", "gemini-3-pro-preview")
+    own_mcp = mcp_client is None
+    if own_mcp:
+        mcp_client = create_mcp_client(cfg)
+        mcp_client.connect()
 
     analysis_summary = []
     for a in all_analyses[:30]:
@@ -180,46 +172,46 @@ def generate_blog_content(
     )
 
     try:
-        response = client.models.generate_content(
-            model=model,
-            contents=[types.Content(role="user", parts=[types.Part.from_text(text=prompt)])],
-            config=types.GenerateContentConfig(response_modalities=["TEXT"], temperature=0.7),
-        )
-    except Exception as e:
-        print(f"ERROR: Blog generation failed: {e}")
-        return _fallback_content(highlights, date_str, lang)
-
-    text = ""
-    for part in response.candidates[0].content.parts:
-        if part.text:
-            text += part.text
-
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-    if text.endswith("```"):
-        text = text[:-3]
-    text = text.strip()
-
-    try:
-        blog = json.loads(text)
-    except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start >= 0 and end > start:
-            try:
-                blog = json.loads(text[start:end+1])
-            except json.JSONDecodeError:
-                print(f"  [WARN] Failed to parse blog JSON, using fallback")
-                return _fallback_content(highlights, date_str, lang)
-        else:
+        try:
+            result = mcp_client.call_tool("batch_understand_images", {
+                "prompt": prompt,
+                "image_urls": [],
+            })
+        except Exception as e:
+            print(f"ERROR: Blog generation failed: {e}")
             return _fallback_content(highlights, date_str, lang)
 
-    blog["footer_date"] = date_str
-    blog["_lang"] = lang
+        text = extract_text_content(result)
 
-    _enforce_char_limits(blog)
-    return blog
+        text = text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+        text = text.strip()
+
+        try:
+            blog = json.loads(text)
+        except json.JSONDecodeError:
+            start = text.find("{")
+            end = text.rfind("}")
+            if start >= 0 and end > start:
+                try:
+                    blog = json.loads(text[start:end+1])
+                except json.JSONDecodeError:
+                    print(f"  [WARN] Failed to parse blog JSON, using fallback")
+                    return _fallback_content(highlights, date_str, lang)
+            else:
+                return _fallback_content(highlights, date_str, lang)
+
+        blog["footer_date"] = date_str
+        blog["_lang"] = lang
+
+        _enforce_char_limits(blog)
+        return blog
+    finally:
+        if own_mcp:
+            mcp_client.close()
 
 
 def _truncate_at_sentence(text: str, limit: int) -> str:

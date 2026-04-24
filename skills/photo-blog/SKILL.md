@@ -13,6 +13,7 @@ metadata:
   execution_mode: sandbox
   adk_additional_tools:
     - imagen_generate
+    - batch_understand_images
 ---
 
 # Photo Blog Generator (with AI Cover)

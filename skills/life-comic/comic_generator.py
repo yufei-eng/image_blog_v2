@@ -16,33 +16,24 @@ import time
 import uuid
 from typing import Dict, List, Optional, Tuple
 
-from google import genai
-from google.genai import types
-
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SHARED_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), "shared")
+if SHARED_DIR not in sys.path:
+    sys.path.insert(0, SHARED_DIR)
+
+from mcp_client import MCPClient, extract_text_content
+from file_uploader import FileUploader
+from image_downloader import extract_image_urls, download_image
 
 
 def _load_config() -> dict:
     config_path = os.path.join(SCRIPT_DIR, "config.json")
-    if os.path.exists(config_path):
-        with open(config_path) as f:
-            return json.load(f)
+    alt_path = os.path.expanduser("~/.claude/skills/life-comic/config.json")
+    for p in [config_path, alt_path]:
+        if os.path.exists(p):
+            with open(p) as f:
+                return json.load(f)
     return {}
-
-
-def _get_client(cfg: dict):
-    api_cfg = cfg.get("compass_api", {})
-    token = (os.environ.get("COMPASS_CLIENT_TOKEN")
-             or os.environ.get("COMPASS_API_KEY")
-             or os.environ.get("ANTHROPIC_API_KEY")
-             or os.environ.get("GOOGLE_API_KEY")
-             or os.environ.get("GEMINI_API_KEY")
-             or api_cfg.get("client_token", ""))
-    base_url = (os.environ.get("COMPASS_BASE_URL")
-                or os.environ.get("ANTHROPIC_BASE_URL")
-                or api_cfg.get("base_url", ""))
-    http_opts = types.HttpOptions(base_url=base_url) if base_url else None
-    return genai.Client(api_key=token, http_options=http_opts)
 
 
 def _load_image_bytes(path: str, max_pixels: int = 800 * 800) -> Tuple[bytes, str]:
@@ -130,7 +121,7 @@ def _detect_lang(text: str) -> str:
     return "zh" if cjk / max(len(text.replace(" ", "")), 1) > 0.15 else "en"
 
 
-def generate_storyboard(panel_moments: List[dict], date_str: Optional[str] = None, user_theme: Optional[str] = None, lang: Optional[str] = None, target_panel_count: Optional[int] = None) -> dict:
+def generate_storyboard(panel_moments: List[dict], date_str: Optional[str] = None, user_theme: Optional[str] = None, lang: Optional[str] = None, target_panel_count: Optional[int] = None, mcp_client: Optional[MCPClient] = None) -> dict:
     """Generate storyboard script and narrative text."""
     from datetime import date
     if not date_str:
@@ -138,9 +129,13 @@ def generate_storyboard(panel_moments: List[dict], date_str: Optional[str] = Non
 
     panel_count = target_panel_count if target_panel_count is not None else len(panel_moments)
 
+    from mcp_client import create_mcp_client
+
     cfg = _load_config()
-    client = _get_client(cfg)
-    model = cfg.get("compass_api", {}).get("understanding_model", "gemini-3-pro-preview")
+    own_mcp = mcp_client is None
+    if own_mcp:
+        mcp_client = create_mcp_client(cfg)
+        mcp_client.connect()
 
     panels_detail = []
     for i, m in enumerate(panel_moments):
@@ -181,45 +176,45 @@ def generate_storyboard(panel_moments: List[dict], date_str: Optional[str] = Non
     )
 
     try:
-        response = client.models.generate_content(
-            model=model,
-            contents=[types.Content(role="user", parts=[types.Part.from_text(text=prompt)])],
-            config=types.GenerateContentConfig(response_modalities=["TEXT"], temperature=0.7),
-        )
-    except Exception as e:
-        print(f"ERROR: Storyboard generation failed: {e}")
-        return _fallback_storyboard(panel_moments, date_str, lang)
-
-    text = ""
-    for part in response.candidates[0].content.parts:
-        if part.text:
-            text += part.text
-
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-    if text.endswith("```"):
-        text = text[:-3]
-    text = text.strip()
-
-    try:
-        sb = json.loads(text)
-    except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start >= 0 and end > start:
-            try:
-                sb = json.loads(text[start:end+1])
-            except json.JSONDecodeError:
-                return _fallback_storyboard(panel_moments, date_str, lang)
-        else:
+        try:
+            result = mcp_client.call_tool("batch_understand_images", {
+                "prompt": prompt,
+                "image_urls": [],
+            })
+        except Exception as e:
+            print(f"ERROR: Storyboard generation failed: {e}")
             return _fallback_storyboard(panel_moments, date_str, lang)
 
-    sb["footer_date"] = date_str
-    sb["_lang"] = lang
+        text = extract_text_content(result)
 
-    _enforce_narrative_limits(sb)
-    return sb
+        text = text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+        text = text.strip()
+
+        try:
+            sb = json.loads(text)
+        except json.JSONDecodeError:
+            start = text.find("{")
+            end = text.rfind("}")
+            if start >= 0 and end > start:
+                try:
+                    sb = json.loads(text[start:end+1])
+                except json.JSONDecodeError:
+                    return _fallback_storyboard(panel_moments, date_str, lang)
+            else:
+                return _fallback_storyboard(panel_moments, date_str, lang)
+
+        sb["footer_date"] = date_str
+        sb["_lang"] = lang
+
+        _enforce_narrative_limits(sb)
+        return sb
+    finally:
+        if own_mcp:
+            mcp_client.close()
 
 
 def _truncate_at_sentence(text: str, limit: int) -> str:
@@ -286,14 +281,24 @@ def generate_comic_image(
     storyboard: dict,
     reference_photos: List[str],
     output_dir: str = ".",
+    mcp_client: Optional[MCPClient] = None,
+    uploader: Optional[FileUploader] = None,
 ) -> Optional[str]:
-    """Generate the multi-panel comic image using Gemini 3.1 Flash Image.
+    """Generate the multi-panel comic image via imagen_generate MCP tool.
 
     Uses reference photos to maintain visual grounding in real scenes.
     """
+    from mcp_client import create_mcp_client
+
     cfg = _load_config()
-    client = _get_client(cfg)
-    gen_model = cfg.get("compass_api", {}).get("generation_model", "gemini-3.1-flash-image-preview")
+    own_mcp = mcp_client is None
+    own_uploader = uploader is None
+
+    if own_mcp:
+        mcp_client = create_mcp_client(cfg)
+        mcp_client.connect()
+    if own_uploader:
+        uploader = FileUploader(cfg)
 
     panels = storyboard.get("panels", [])
     panel_count = len(panels)
@@ -314,49 +319,47 @@ def generate_comic_image(
         panel_descriptions=panel_descs,
     )
 
-    parts: list[types.Part] = []
-
+    image_urls = []
     ref_count = min(len(reference_photos), 10)
     for rp in reference_photos[:ref_count]:
         try:
             img_data, mime = _load_image_bytes(rp)
-            parts.append(types.Part.from_bytes(data=img_data, mime_type=mime))
+            filename = os.path.basename(rp).rsplit(".", 1)[0] + ".jpg"
+            url = uploader.upload_bytes(img_data, filename, mime)
+            image_urls.append(url)
         except Exception as e:
-            print(f"  [WARN] Failed to load reference photo {rp}: {e}")
+            print(f"  [WARN] Failed to upload reference photo {rp}: {e}")
 
-    parts.append(types.Part.from_text(text=prompt))
-
-    print(f"  Calling {gen_model} with {ref_count} reference photos...")
+    print(f"  Calling imagen_generate with {len(image_urls)} reference photos...")
 
     try:
-        response = client.models.generate_content(
-            model=gen_model,
-            contents=[types.Content(role="user", parts=parts)],
-            config=types.GenerateContentConfig(response_modalities=["IMAGE", "TEXT"]),
-        )
-    except Exception as e:
-        print(f"  ERROR: Comic image generation failed: {e}")
-        return None
+        try:
+            result = mcp_client.call_tool("imagen_generate", {
+                "prompt": prompt,
+                "image_urls": image_urls,
+            })
+        except Exception as e:
+            print(f"  ERROR: Comic image generation failed: {e}")
+            return None
 
-    if not response.candidates:
-        print("  No candidates returned")
-        return None
+        text = extract_text_content(result)
+        urls = extract_image_urls(text)
+        if not urls:
+            print("  No download URLs in imagen_generate response")
+            return None
 
-    for part in response.candidates[0].content.parts:
-        if part.inline_data and part.inline_data.data:
-            mime = part.inline_data.mime_type or "image/png"
-            ext_map = {"image/png": ".png", "image/webp": ".webp"}
-            ext = ext_map.get(mime, ".png")
-            filename = f"comic_{int(time.time())}_{uuid.uuid4().hex[:6]}{ext}"
-            filepath = os.path.join(output_dir, filename)
-            with open(filepath, "wb") as f:
-                f.write(part.inline_data.data)
-            size_kb = len(part.inline_data.data) / 1024
-            print(f"  Comic image saved: {os.path.abspath(filepath)} ({size_kb:.1f} KB)")
-            return os.path.abspath(filepath)
-
-    print("  No image in response")
-    return None
+        os.makedirs(output_dir, exist_ok=True)
+        filename = f"comic_{int(time.time())}_{uuid.uuid4().hex[:6]}.png"
+        filepath = os.path.join(output_dir, filename)
+        download_image(urls[0], filepath)
+        size_kb = os.path.getsize(filepath) / 1024
+        print(f"  Comic image saved: {os.path.abspath(filepath)} ({size_kb:.1f} KB)")
+        return os.path.abspath(filepath)
+    finally:
+        if own_mcp:
+            mcp_client.close()
+        if own_uploader:
+            uploader.close()
 
 
 def _fallback_storyboard(panels: List[dict], date_str: str, lang: str = "en") -> dict:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Photo analysis via Gemini 3 Pro — batch understanding, scoring, and highlight selection.
+"""Photo analysis via MCP tools — batch understanding, scoring, and highlight selection.
 
 Architecture inspired by:
 - ai-instagram-organizer's multi-dimensional PhotoScore system
@@ -16,8 +16,14 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 from PIL import Image, ImageOps
-from google import genai
-from google.genai import types
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SHARED_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), "shared")
+if SHARED_DIR not in sys.path:
+    sys.path.insert(0, SHARED_DIR)
+
+from mcp_client import MCPClient, extract_text_content
+from file_uploader import FileUploader
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATHS = [
@@ -25,7 +31,7 @@ CONFIG_PATHS = [
     os.path.expanduser("~/.claude/skills/photo-blog/config.json"),
 ]
 
-BATCH_SIZE = 5  # Gemini 3 Pro supports up to 14 images; use 5 for richer per-image analysis
+BATCH_SIZE = 5
 
 
 def _load_config() -> dict:
@@ -34,27 +40,6 @@ def _load_config() -> dict:
             with open(path) as f:
                 return json.load(f)
     return {}
-
-
-def _get_client(cfg: dict):
-    api_cfg = cfg.get("compass_api", {})
-    token = (os.environ.get("COMPASS_CLIENT_TOKEN")
-             or os.environ.get("COMPASS_API_KEY")
-             or os.environ.get("ANTHROPIC_API_KEY")
-             or os.environ.get("GOOGLE_API_KEY")
-             or os.environ.get("GEMINI_API_KEY")
-             or api_cfg.get("client_token", ""))
-    base_url = (os.environ.get("COMPASS_BASE_URL")
-                or os.environ.get("ANTHROPIC_BASE_URL")
-                or api_cfg.get("base_url", ""))
-    if not token:
-        print("ERROR: API key not found.")
-        print("FIX: Set one of: COMPASS_CLIENT_TOKEN, COMPASS_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY, GEMINI_API_KEY")
-        print(f"  Or create config.json from config.json.example:")
-        print(f"  cp {os.path.join(SCRIPT_DIR, 'config.json.example')} {os.path.join(SCRIPT_DIR, 'config.json')}")
-        sys.exit(1)
-    http_opts = types.HttpOptions(base_url=base_url) if base_url else None
-    return genai.Client(api_key=token, http_options=http_opts)
 
 
 @dataclass
@@ -194,30 +179,29 @@ def extract_photo_date(path: str) -> Optional[str]:
     return None
 
 
-def analyze_batch(client, model: str, image_paths: List[str]) -> List[dict]:
-    """Send a batch of images to Gemini 3 Pro for analysis."""
-    parts: list[types.Part] = []
-
-    for p in image_paths:
-        data, mime = _load_image_bytes_fixed(p)
-        parts.append(types.Part.from_bytes(data=data, mime_type=mime))
-
-    parts.append(types.Part.from_text(text=ANALYSIS_PROMPT))
+def analyze_batch(mcp_client: MCPClient, uploader: FileUploader, image_paths: List[str]) -> List[dict]:
+    """Send a batch of images to batch_understand_images MCP tool for analysis."""
+    try:
+        image_urls = []
+        for p in image_paths:
+            data, mime = _load_image_bytes_fixed(p)
+            filename = os.path.basename(p).rsplit(".", 1)[0] + ".jpg"
+            url = uploader.upload_bytes(data, filename, mime)
+            image_urls.append(url)
+    except Exception as e:
+        print(f"  [WARN] Image upload failed: {e}")
+        return []
 
     try:
-        response = client.models.generate_content(
-            model=model,
-            contents=[types.Content(role="user", parts=parts)],
-            config=types.GenerateContentConfig(response_modalities=["TEXT"], temperature=0.3),
-        )
+        result = mcp_client.call_tool("batch_understand_images", {
+            "prompt": ANALYSIS_PROMPT,
+            "image_urls": image_urls,
+        })
     except Exception as e:
         print(f"  [WARN] Batch analysis failed: {e}")
         return []
 
-    text = ""
-    for part in response.candidates[0].content.parts:
-        if part.text:
-            text += part.text
+    text = extract_text_content(result)
 
     text = text.strip()
     if text.startswith("```"):
@@ -240,52 +224,68 @@ def analyze_batch(client, model: str, image_paths: List[str]) -> List[dict]:
         return []
 
 
-def analyze_photos(image_paths: List[str], batch_size: int = BATCH_SIZE) -> List[PhotoAnalysis]:
+def analyze_photos(image_paths: List[str], batch_size: int = BATCH_SIZE,
+                    mcp_client: Optional[MCPClient] = None,
+                    uploader: Optional[FileUploader] = None) -> List[PhotoAnalysis]:
     """Analyze all photos in batches and return scored/structured results."""
+    from mcp_client import create_mcp_client
+
     cfg = _load_config()
-    client = _get_client(cfg)
-    model = cfg.get("compass_api", {}).get("understanding_model", "gemini-3-pro-preview")
+    own_mcp = mcp_client is None
+    own_uploader = uploader is None
 
-    all_results: List[PhotoAnalysis] = []
-    total_batches = math.ceil(len(image_paths) / batch_size)
+    if own_mcp:
+        mcp_client = create_mcp_client(cfg)
+        mcp_client.connect()
+    if own_uploader:
+        uploader = FileUploader(cfg)
 
-    for batch_idx in range(total_batches):
-        start = batch_idx * batch_size
-        end = min(start + batch_size, len(image_paths))
-        batch_paths = image_paths[start:end]
+    try:
+        all_results: List[PhotoAnalysis] = []
+        total_batches = math.ceil(len(image_paths) / batch_size)
 
-        print(f"  Analyzing batch {batch_idx + 1}/{total_batches} ({len(batch_paths)} photos)...")
-        raw_results = analyze_batch(client, model, batch_paths)
+        for batch_idx in range(total_batches):
+            start = batch_idx * batch_size
+            end = min(start + batch_size, len(image_paths))
+            batch_paths = image_paths[start:end]
 
-        for i, path in enumerate(batch_paths):
-            if i < len(raw_results):
-                r = raw_results[i]
-                scores = r.get("scores", {})
-                score = PhotoScore(
-                    visual_appeal=scores.get("visual_appeal", 5.0),
-                    story_value=scores.get("story_value", 5.0),
-                    emotion_intensity=scores.get("emotion_intensity", 5.0),
-                    uniqueness=scores.get("uniqueness", 5.0),
-                    technical_quality=scores.get("technical_quality", 5.0),
-                )
-                analysis = PhotoAnalysis(
-                    file_path=path,
-                    scene=r.get("scene", ""),
-                    people=r.get("people", ""),
-                    action=r.get("action", ""),
-                    mood=r.get("mood", ""),
-                    location=r.get("location", ""),
-                    time_of_day=r.get("time_of_day", ""),
-                    objects=r.get("objects", ""),
-                    narrative_hook=r.get("narrative_hook", ""),
-                    orientation_correct=r.get("orientation_correct", True),
-                    score=score,
-                )
-            else:
-                analysis = PhotoAnalysis(file_path=path)
-            all_results.append(analysis)
+            print(f"  Analyzing batch {batch_idx + 1}/{total_batches} ({len(batch_paths)} photos)...")
+            raw_results = analyze_batch(mcp_client, uploader, batch_paths)
 
-    return all_results
+            for i, path in enumerate(batch_paths):
+                if i < len(raw_results):
+                    r = raw_results[i]
+                    scores = r.get("scores", {})
+                    score = PhotoScore(
+                        visual_appeal=scores.get("visual_appeal", 5.0),
+                        story_value=scores.get("story_value", 5.0),
+                        emotion_intensity=scores.get("emotion_intensity", 5.0),
+                        uniqueness=scores.get("uniqueness", 5.0),
+                        technical_quality=scores.get("technical_quality", 5.0),
+                    )
+                    analysis = PhotoAnalysis(
+                        file_path=path,
+                        scene=r.get("scene", ""),
+                        people=r.get("people", ""),
+                        action=r.get("action", ""),
+                        mood=r.get("mood", ""),
+                        location=r.get("location", ""),
+                        time_of_day=r.get("time_of_day", ""),
+                        objects=r.get("objects", ""),
+                        narrative_hook=r.get("narrative_hook", ""),
+                        orientation_correct=r.get("orientation_correct", True),
+                        score=score,
+                    )
+                else:
+                    analysis = PhotoAnalysis(file_path=path)
+                all_results.append(analysis)
+
+        return all_results
+    finally:
+        if own_mcp:
+            mcp_client.close()
+        if own_uploader:
+            uploader.close()
 
 
 def select_highlights(analyses: List[PhotoAnalysis], max_count: int = 8) -> List[PhotoAnalysis]:
