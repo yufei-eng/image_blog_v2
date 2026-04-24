@@ -191,18 +191,19 @@ Claude Code must orchestrate the workflow by calling MCP tools itself and passin
 No `config.json` needed. Claude Code orchestrates MCP tools directly and passes results
 to the script via `--pre-analyzed`, `--storyboard`, `--comic-images-dir` parameters.
 
-### Local development
+### Direct MCP mode (non-sandbox)
 
-Create `config.json` in the same directory as `main.py` for local MCP server connection:
+When running outside sandbox, the script calls MCP tools directly via HTTP.
+Create `config.json` in the same directory as `main.py`:
 
 ```json
 {
   "mcp_server": {
-    "url": "<your_local_mcpserver_sse_endpoint>",
+    "url": "<mcpserver_sse_endpoint>",
     "timeout": 300
   },
   "file_upload": {
-    "url": "<your_file_upload_endpoint>",
+    "url": "<file_upload_endpoint>",
     "timeout": 60
   }
 }
