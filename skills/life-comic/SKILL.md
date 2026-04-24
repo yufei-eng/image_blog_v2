@@ -118,29 +118,31 @@ Pass `--theme` to guide comic theme. Falls back to auto-detected themes if photo
 
 ## Sandbox Execution Workflow
 
-In sandbox environment, Python scripts cannot call MCP tools directly (no MCP_PROXY_TOKEN in subprocess).
-Claude Code must orchestrate the workflow by calling MCP tools itself and passing results to the script.
+In sandbox, Python cannot call MCP tools. You must orchestrate the workflow yourself.
 
-**CRITICAL**: Use the professional prompts exported from the Python engine — do NOT improvise your own analysis criteria.
+### DO NOT (these will fail):
+- ~~Run `main.py` without `--pre-analyzed`~~ → crashes (no MCP_PROXY_TOKEN)
+- ~~Call `batch_understand_images`~~ → returns 400 (MIME type: application/octet-stream)
+- ~~Improvise analysis criteria~~ → use `--export-prompts` for professional prompts
 
 ### Step-by-step:
 
-1. **Export professional prompts** (run once per session, cache the output):
+1. **View images with the Read tool** — use `Read` on each image file to see its content.
+   This is your primary image understanding method in sandbox mode.
+
+2. **Export professional prompts** (run once, cache the output):
    ```bash
    python3 <SKILL_DIR>/main.py dummy --export-prompts 2>/dev/null
    ```
-   This outputs JSON containing the exact `analysis_prompt` and `storyboard_prompt_template`
-   used by the Python analysis engine, along with `scoring_weights` and `tier_thresholds`.
+   Outputs JSON with `analysis_prompt`, `storyboard_prompt_template`, `scoring_weights`, `tier_thresholds`.
 
-2. **Analyze images using the exported `analysis_prompt`**:
-   - For each photo, use the Read tool to view it
-   - Apply the `analysis_prompt` criteria exactly as specified:
+3. **Analyze images using the exported `analysis_prompt`**:
+   - Based on what you saw in step 1, apply the `analysis_prompt` criteria:
      - Extract: scene_summary, character_desc, action_desc, emotion, environment, time_of_day, comic_panel_desc
-     - Score each photo on 3 axes using the exported `scoring_weights`:
+     - Score on 3 axes per `scoring_weights`:
        comic_potential(0.35), visual_distinctness(0.30), narrative_weight(0.35)
-     - Calculate weighted composite score (0-10 scale)
-     - Assign tiers per `tier_thresholds`: star_moment(>=7.5), good_moment(>=6.0), average(>=4.0), skip(<4.0)
-   - Select top N panels with diversity optimization (emotion + environment + time_of_day variety)
+     - Composite score (0-10), tiers per `tier_thresholds`: star_moment(>=7.5), good_moment(>=6.0), average(>=4.0), skip(<4.0)
+   - Select top N panels with diversity (emotion + environment + time_of_day variety)
    - Save as `analysis.json`:
      ```json
      {
@@ -162,13 +164,9 @@ Claude Code must orchestrate the workflow by calling MCP tools itself and passin
      }
      ```
 
-3. **Generate storyboard using the exported `storyboard_prompt_template`**:
-   - Take the `storyboard_prompt_template` and fill in the variables:
-     - `panels_json`: selected comic moments with index, scene, character, action, emotion, environment, time_of_day, comic_panel_desc
-     - `theme_instruction`: use theme template if user specified a theme, empty string otherwise
-     - `lang_instruction`: Chinese or English instruction based on user language
-     - `panel_count`: number of panels
-   - Generate storyboard JSON matching this **exact structure** (field names must match):
+4. **Generate storyboard using the exported `storyboard_prompt_template`**:
+   - Fill in: `panels_json`, `theme_instruction`, `lang_instruction`, `panel_count`
+   - Generate storyboard JSON matching this **exact structure**:
      ```json
      {
        "theme": "A 2-6 word theme",
@@ -193,11 +191,11 @@ Claude Code must orchestrate the workflow by calling MCP tools itself and passin
    - **CRITICAL**: panels array must have exactly one entry per selected moment
    - Save as `storyboard.json`
 
-4. **Generate comic images** (optional):
-   - Call `imagen_generate` MCP tool with reference photos and comic prompts
-   - Download results to a directory (e.g., `./comic_imgs/`)
+5. **Generate comic image** (optional):
+   - Call `imagen_generate` MCP tool with comic style prompt and reference photos
+   - Download result to a directory (e.g., `./comic_imgs/`)
 
-5. **Run the script** with pre-computed data:
+6. **Run the script** with pre-computed data:
    ```bash
    python3 <SKILL_DIR>/main.py <image_dir> \
        --pre-analyzed analysis.json \
@@ -207,7 +205,7 @@ Claude Code must orchestrate the workflow by calling MCP tools itself and passin
        --format all
    ```
 
-6. **Upload and deliver** — Upload generated files and provide download links.
+7. **Upload and deliver** — Upload generated files and provide download links.
 
 ## Configuration
 

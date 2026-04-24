@@ -116,30 +116,32 @@ Pass `--theme` to guide generation toward a specific angle. If the photos don't 
 
 ## Sandbox Execution Workflow
 
-In sandbox environment, Python scripts cannot call MCP tools directly (no MCP_PROXY_TOKEN in subprocess).
-Claude Code must orchestrate the workflow by calling MCP tools itself and passing results to the script.
+In sandbox, Python cannot call MCP tools. You must orchestrate the workflow yourself.
 
-**CRITICAL**: Use the professional prompts exported from the Python engine — do NOT improvise your own analysis criteria.
+### DO NOT (these will fail):
+- ~~Run `main.py` without `--pre-analyzed`~~ → crashes (no MCP_PROXY_TOKEN)
+- ~~Call `batch_understand_images`~~ → returns 400 (MIME type: application/octet-stream)
+- ~~Improvise analysis criteria~~ → use `--export-prompts` for professional prompts
 
 ### Step-by-step:
 
-1. **Export professional prompts** (run once per session, cache the output):
+1. **View images with the Read tool** — use `Read` on each image file to see its content.
+   This is your primary image understanding method in sandbox mode.
+
+2. **Export professional prompts** (run once, cache the output):
    ```bash
    python3 <SKILL_DIR>/main.py dummy --export-prompts 2>/dev/null
    ```
-   This outputs JSON containing the exact `analysis_prompt` and `blog_generation_prompt_template`
-   used by the Python analysis engine, along with `scoring_weights` and `tier_thresholds`.
+   Outputs JSON with `analysis_prompt`, `blog_generation_prompt_template`, `scoring_weights`, `tier_thresholds`.
 
-2. **Analyze images using the exported `analysis_prompt`**:
-   - For each photo, use the Read tool to view it
-   - Apply the `analysis_prompt` criteria exactly as specified:
+3. **Analyze images using the exported `analysis_prompt`**:
+   - Based on what you saw in step 1, apply the `analysis_prompt` criteria:
      - Extract: scene, people, action, mood, location, time_of_day, objects, narrative_hook
-     - Score each photo on 5 axes using the exported `scoring_weights`:
+     - Score on 5 axes per `scoring_weights`:
        visual_appeal(0.20), story_value(0.25), emotion_intensity(0.25),
        uniqueness(0.15), technical_quality(0.15)
-     - Calculate weighted composite score (0-10 scale)
-     - Assign tiers per `tier_thresholds`: highlight(>=8.0), good(>=6.5), average(>=4.5), skip(<4.5)
-   - Select top N highlights with diversity optimization (prefer variety in mood, location, scene)
+     - Composite score (0-10), tiers per `tier_thresholds`: highlight(>=8.0), good(>=6.5), average(>=4.5), skip(<4.5)
+   - Select top N highlights with diversity (vary mood, location, scene)
    - Save as `analysis.json`:
      ```json
      {
@@ -163,14 +165,9 @@ Claude Code must orchestrate the workflow by calling MCP tools itself and passin
      }
      ```
 
-3. **Generate blog content using the exported `blog_generation_prompt_template`**:
-   - Take the `blog_generation_prompt_template` and fill in the variables:
-     - `analysis_json`: top 30 from all analyses (scene/mood/location/action fields)
-     - `highlights_json`: selected highlights with index, scene, people, action, mood, location, objects, narrative_hook, score
-     - `theme_instruction`: use theme template if user specified a theme, empty string otherwise
-     - `lang_instruction`: Chinese or English instruction based on user language
-     - `highlight_count`: number of highlights
-   - Generate blog JSON matching this **exact structure** (field names must match):
+4. **Generate blog content using the exported `blog_generation_prompt_template`**:
+   - Fill in: `analysis_json`, `highlights_json`, `theme_instruction`, `lang_instruction`, `highlight_count`
+   - Generate blog JSON matching this **exact structure**:
      ```json
      {
        "title": "A poetic 3-6 word title",
@@ -187,11 +184,11 @@ Claude Code must orchestrate the workflow by calling MCP tools itself and passin
    - **CRITICAL**: insights array must have exactly one entry per highlight photo
    - Save as `blog.json`
 
-4. **Generate cover image** (optional):
-   - Call `imagen_generate` MCP tool with a prompt describing the desired cover style
+5. **Generate cover image** (optional):
+   - Call `imagen_generate` MCP tool with a cover style prompt
    - Download the result and save as `cover.png`
 
-5. **Run the script** with pre-computed data:
+6. **Run the script** with pre-computed data:
    ```bash
    python3 <SKILL_DIR>/main.py <image_dir> \
        --pre-analyzed analysis.json \
@@ -201,7 +198,7 @@ Claude Code must orchestrate the workflow by calling MCP tools itself and passin
        --format all
    ```
 
-6. **Upload and deliver** — Upload generated files and provide download links.
+7. **Upload and deliver** — Upload generated files and provide download links.
 
 ## Configuration
 

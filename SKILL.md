@@ -37,38 +37,36 @@ Two photo-to-content generation skills powered by Gemini 3 Pro + Gemini 3.1 Flas
 
 ## Setup (in sandbox)
 
-**Quick-start note**: The code has a built-in API key fallback chain that automatically checks env vars in this order: `COMPASS_CLIENT_TOKEN` → `COMPASS_API_KEY` → `ANTHROPIC_API_KEY` → `GOOGLE_API_KEY` → `GEMINI_API_KEY` → config.json. If any of these env vars is already set in the sandbox environment, you can **skip the config.json setup steps** below — the code will pick up the key automatically. Just download, install dependencies, and run.
-
 Download and install the skill:
 
 ```bash
 # Download
-curl -sL https://codeload.github.com/yufei-eng/image_blog_v2/zip/refs/heads/main -o /tmp/image_blog.zip
-cd /tmp && unzip -qo image_blog.zip && cd image_blog_v2-main
+curl -sL <github_zip_url> -o /tmp/image_blog.zip
+cd /tmp && unzip -qo image_blog.zip && cd image_blog_v2-*
 
 # Install dependencies
-pip install -q google-genai Pillow playwright
+bash install.sh
+pip install -q Pillow playwright 2>/dev/null || true
 python -m playwright install chromium 2>/dev/null || true
 ```
 
-Only if no API key env var is set, configure manually:
-```bash
-for skill in photo-blog life-comic; do
-  cp skills/$skill/config.json.example skills/$skill/config.json
-done
-```
+## Sandbox Execution (CRITICAL — read before running)
 
-If `COMPASS_API_KEY` env var is set but you still want config.json:
-```bash
-for skill in photo-blog life-comic; do
-  python3 -c "
-import json, os
-cfg = json.load(open('skills/$skill/config.json'))
-cfg['compass_api']['client_token'] = os.environ.get('COMPASS_API_KEY', cfg['compass_api']['client_token'])
-json.dump(cfg, open('skills/$skill/config.json', 'w'), indent=2)
-"
-done
-```
+In sandbox, Python scripts **cannot** call MCP tools directly. You must orchestrate the workflow yourself.
+
+**MUST DO**:
+1. Read the sub-skill's SKILL.md for the detailed Sandbox Execution Workflow:
+   - Photo blog: `skills/photo-blog/SKILL.md` → "Sandbox Execution Workflow" section
+   - Life comic: `skills/life-comic/SKILL.md` → "Sandbox Execution Workflow" section
+2. Use the `Read` tool to view each image file directly (you have vision capability)
+3. Run `python3 <skill_dir>/main.py dummy --export-prompts` to get professional analysis prompts
+4. Create analysis JSON and content JSON files, then run the script with `--pre-analyzed` flags
+
+**DO NOT** (these will fail and waste turns):
+- ~~Run `main.py` directly without `--pre-analyzed` flags~~ → crashes (no MCP_PROXY_TOKEN)
+- ~~Call `batch_understand_images` with image URLs~~ → returns 400 (MIME type issue)
+- ~~Call `all_translate` with image URLs~~ → same 400 error
+- ~~Improvise your own analysis criteria~~ → use `--export-prompts` for professional prompts
 
 ## Running — photo-blog
 
