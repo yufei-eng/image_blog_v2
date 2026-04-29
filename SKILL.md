@@ -63,8 +63,11 @@ In sandbox, Python scripts **cannot** call MCP tools directly. You must orchestr
 4. **`image_understand`** tool with `prompt` = exported analysis prompt, `image_urls` = the download URLs from step 1 → returns Gemini 3 Pro analysis
 5. Parse Gemini result → write `analysis.json`
 6. Generate blog/comic content JSON
-7. `imagen_generate` with `prompt` = cover/comic description AND `image_urls` = same download URLs from step 1 → AI image based on real photos
-8. Run script with `--pre-analyzed` flags
+7. **`imagen_generate`** — call ONCE PER SKILL being generated, with `image_urls` = same download URLs from step 1:
+   - **photo-blog**: generate AI cover image → `curl` download → pass as `--cover-path cover.png`. **NEVER use `--skip-cover`** — the AI cover is a core feature.
+   - **life-comic**: generate comic art image → `curl` download → pass via `--comic-images-dir`
+   - When running BOTH skills, you MUST call `imagen_generate` TWICE (once for cover, once for comic). Do NOT skip either.
+8. Run script with `--pre-analyzed` flags AND the generated image paths from step 7
 9. `upload_file` all outputs
 
 ### ABSOLUTE PROHIBITIONS (violating these will produce garbage output):
@@ -72,6 +75,7 @@ In sandbox, Python scripts **cannot** call MCP tools directly. You must orchestr
 - **NEVER use `Read` on image files** — Read-based self-analysis is far below Gemini 3 Pro quality. You MUST use `image_understand` for ALL image analysis.
 - **NEVER hand-write analysis JSON** — analysis MUST come from `image_understand` (Gemini 3 Pro).
 - **NEVER call `imagen_generate` without `image_urls`** — pure text prompts generate AI-imagined images unrelated to user photos. Always pass the photo download URLs.
+- **NEVER use `--skip-cover` for photo-blog** — the AI cover is a core feature. Always generate it via `imagen_generate` and pass `--cover-path`.
 - **NEVER call `TodoWrite`** — it wastes turns. Track progress internally.
 - **NEVER run `main.py` without `--pre-analyzed`** — crashes (no MCP_PROXY_TOKEN).
 

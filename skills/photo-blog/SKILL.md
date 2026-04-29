@@ -122,6 +122,7 @@ In sandbox, Python cannot call MCP tools. You must orchestrate the workflow your
 - **NEVER use `Read` on image files** — Read-based self-analysis is far below Gemini 3 Pro. You MUST use `image_understand`.
 - **NEVER hand-write analysis JSON yourself** — analysis MUST come from `image_understand` (Gemini 3 Pro).
 - **NEVER call `imagen_generate` without `image_urls`** — pass the photo download URLs so the cover is based on real photos.
+- **NEVER use `--skip-cover` in sandbox mode** — the AI cover is a core feature. You MUST call `imagen_generate` to generate a cover, download it, and pass `--cover-path`. The `--skip-cover` flag is ONLY for local non-sandbox debugging.
 - **NEVER call `TodoWrite`** — wastes turns.
 - **NEVER run `main.py` without `--pre-analyzed`** — crashes (no MCP_PROXY_TOKEN).
 
@@ -189,11 +190,12 @@ In sandbox, Python cannot call MCP tools. You must orchestrate the workflow your
    - **CRITICAL**: insights array must have exactly one entry per highlight photo
    - Save as `blog.json`
 
-5. **Generate cover image**:
+5. **Generate cover image** (MANDATORY — do NOT skip):
    - Call `imagen_generate` MCP tool with:
      - `prompt`: cover style description
      - `image_urls`: the SAME download URLs from step 1 (so the cover reflects real photo content)
    - Download the result and save as `cover.png`
+   - If `imagen_generate` fails or is cancelled, **retry it** — do NOT fall back to `--skip-cover`
 
 6. **Run the script** with pre-computed data:
    ```bash
