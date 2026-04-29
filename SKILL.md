@@ -13,7 +13,7 @@ metadata:
   execution_mode: sandbox
   sandbox_tools:
     - imagen_generate
-    - batch_understand_images
+    - image_understand
 ---
 
 # Image Blog & Life Comic Skill
@@ -60,7 +60,7 @@ In sandbox, Python scripts **cannot** call MCP tools directly. You must orchestr
 1. `download_file` each user photo → save the **download URLs** (you need them for step 4)
 2. `curl` download photos to local disk
 3. `python3 <skill_dir>/main.py dummy --export-prompts` → get the analysis prompt text
-4. **`batch_understand_images`** tool with `prompt` = exported analysis prompt, `image_urls` = the download URLs from step 1 → returns Gemini 3 Pro analysis
+4. **`image_understand`** tool with `prompt` = exported analysis prompt, `image_urls` = the download URLs from step 1 → returns Gemini 3 Pro analysis
 5. Parse Gemini result → write `analysis.json`
 6. Generate blog/comic content JSON
 7. `imagen_generate` with `prompt` = cover/comic description AND `image_urls` = same download URLs from step 1 → AI image based on real photos
@@ -69,8 +69,8 @@ In sandbox, Python scripts **cannot** call MCP tools directly. You must orchestr
 
 ### ABSOLUTE PROHIBITIONS (violating these will produce garbage output):
 
-- **NEVER use `Read` on image files** — Read-based self-analysis is far below Gemini 3 Pro quality. You MUST use `batch_understand_images` for ALL image analysis.
-- **NEVER hand-write analysis JSON** — analysis MUST come from `batch_understand_images` (Gemini 3 Pro).
+- **NEVER use `Read` on image files** — Read-based self-analysis is far below Gemini 3 Pro quality. You MUST use `image_understand` for ALL image analysis.
+- **NEVER hand-write analysis JSON** — analysis MUST come from `image_understand` (Gemini 3 Pro).
 - **NEVER call `imagen_generate` without `image_urls`** — pure text prompts generate AI-imagined images unrelated to user photos. Always pass the photo download URLs.
 - **NEVER call `TodoWrite`** — it wastes turns. Track progress internally.
 - **NEVER run `main.py` without `--pre-analyzed`** — crashes (no MCP_PROXY_TOKEN).

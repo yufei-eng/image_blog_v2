@@ -10,7 +10,7 @@ Usage:
         [--cover-path cover.png] [--output blog.html] [--format all]
 
 Workflow:
-    1. Batch analyze photos via MCP batch_understand_images (or load from --pre-analyzed)
+    1. Batch analyze photos via MCP image_understand (or load from --pre-analyzed)
     2. Score and select highlight photos (diversity-optimized)
     3. Generate blog narrative via MCP (or load from --blog-content)
     4. Generate AI cover image via MCP imagen_generate (or use --cover-path)
@@ -156,7 +156,7 @@ def main():
             orientation_flags = [h.get("orientation_correct", True) for h in highlight_dicts]
             print(f"  Loaded {len(all_dicts)} analyses, {len(highlight_dicts)} highlights")
         else:
-            print(f"\n[2/{total_steps}] Analyzing photos via MCP batch_understand_images...")
+            print(f"\n[2/{total_steps}] Analyzing photos via MCP image_understand...")
             analyses = analyze_photos(image_paths, mcp_client=mcp, uploader=uploader)
             print(f"  Analyzed {len(analyses)} photos")
 

@@ -10,7 +10,7 @@ Usage:
         [--comic-images-dir ./comic_imgs] [--output comic.html] [--format all]
 
 Workflow:
-    1. Batch analyze photos via MCP batch_understand_images (or load from --pre-analyzed)
+    1. Batch analyze photos via MCP image_understand (or load from --pre-analyzed)
     2. Select top moments with narrative diversity
     3. Generate storyboard script and emotional narrative via MCP (or load from --storyboard)
     4. Generate multi-panel comic image via MCP imagen_generate (or use --comic-images-dir)

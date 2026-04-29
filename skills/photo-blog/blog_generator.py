@@ -191,7 +191,7 @@ def generate_blog_content(
 
     try:
         try:
-            result = mcp_client.call_tool("batch_understand_images", {
+            result = mcp_client.call_tool("image_understand", {
                 "prompt": prompt,
                 "image_urls": image_urls,
             })

@@ -164,7 +164,7 @@ def analyze_batch(mcp_client: MCPClient, uploader: FileUploader, image_paths: Li
         return []
 
     try:
-        result = mcp_client.call_tool("batch_understand_images", {
+        result = mcp_client.call_tool("image_understand", {
             "prompt": COMIC_ANALYSIS_PROMPT,
             "image_urls": image_urls,
         })

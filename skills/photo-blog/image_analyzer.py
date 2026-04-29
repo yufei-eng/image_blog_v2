@@ -180,7 +180,7 @@ def extract_photo_date(path: str) -> Optional[str]:
 
 
 def analyze_batch(mcp_client: MCPClient, uploader: FileUploader, image_paths: List[str]) -> List[dict]:
-    """Send a batch of images to batch_understand_images MCP tool for analysis."""
+    """Send a batch of images to image_understand MCP tool for analysis."""
     try:
         image_urls = []
         for p in image_paths:
@@ -193,7 +193,7 @@ def analyze_batch(mcp_client: MCPClient, uploader: FileUploader, image_paths: Li
         return []
 
     try:
-        result = mcp_client.call_tool("batch_understand_images", {
+        result = mcp_client.call_tool("image_understand", {
             "prompt": ANALYSIS_PROMPT,
             "image_urls": image_urls,
         })

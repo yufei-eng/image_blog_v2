@@ -12,7 +12,7 @@ metadata:
   execution_mode: sandbox
   sandbox_tools:
     - imagen_generate
-    - batch_understand_images
+    - image_understand
 ---
 
 # Life Comic Generator
@@ -121,8 +121,8 @@ Pass `--theme` to guide comic theme. Falls back to auto-detected themes if photo
 In sandbox, Python cannot call MCP tools. You must orchestrate the workflow yourself.
 
 ### ABSOLUTE PROHIBITIONS (violating these produces garbage output):
-- **NEVER use `Read` on image files** — Read-based self-analysis is far below Gemini 3 Pro. You MUST use `batch_understand_images`.
-- **NEVER hand-write analysis JSON yourself** — analysis MUST come from `batch_understand_images` (Gemini 3 Pro).
+- **NEVER use `Read` on image files** — Read-based self-analysis is far below Gemini 3 Pro. You MUST use `image_understand`.
+- **NEVER hand-write analysis JSON yourself** — analysis MUST come from `image_understand` (Gemini 3 Pro).
 - **NEVER call `imagen_generate` without `image_urls`** — pass the photo download URLs so the comic reflects real photos.
 - **NEVER call `TodoWrite`** — wastes turns.
 - **NEVER run `main.py` without `--pre-analyzed`** — crashes (no MCP_PROXY_TOKEN).
@@ -138,8 +138,8 @@ In sandbox, Python cannot call MCP tools. You must orchestrate the workflow your
    ```
    Outputs JSON with `analysis_prompt`, `storyboard_prompt_template`, `scoring_weights`, `tier_thresholds`.
 
-3. **Analyze images using `batch_understand_images` tool** (MANDATORY — do NOT skip):
-   - Call `batch_understand_images` with:
+3. **Analyze images using `image_understand` tool** (MANDATORY — do NOT skip):
+   - Call `image_understand` with:
      - `prompt`: the `analysis_prompt` from step 2
      - `image_urls`: array of the download URLs from step 1 (NOT local file paths)
    - Parse the Gemini response and structure it into `analysis.json`:

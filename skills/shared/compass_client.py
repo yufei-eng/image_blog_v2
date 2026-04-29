@@ -74,7 +74,7 @@ class CompassClient:
         if not self._client:
             self.connect()
 
-        if name == "batch_understand_images":
+        if name == "image_understand":
             text = self._understand(arguments, timeout)
             return {"content": [{"type": "text", "text": text}]}
         elif name == "imagen_generate":
