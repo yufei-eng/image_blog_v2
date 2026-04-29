@@ -55,18 +55,25 @@ python -m playwright install chromium 2>/dev/null || true
 
 In sandbox, Python scripts **cannot** call MCP tools directly. You must orchestrate the workflow yourself.
 
-**MUST DO**:
-1. Read the sub-skill's SKILL.md for the detailed Sandbox Execution Workflow:
-   - Photo blog: `skills/photo-blog/SKILL.md` → "Sandbox Execution Workflow" section
-   - Life comic: `skills/life-comic/SKILL.md` → "Sandbox Execution Workflow" section
-2. Run `python3 <skill_dir>/main.py dummy --export-prompts` to get professional analysis prompts
-3. Call `batch_understand_images` tool with **downloaded image URLs** + the exported analysis prompt to analyze photos
-4. Create analysis JSON from `batch_understand_images` results, then run the script with `--pre-analyzed` flags
+### MANDATORY WORKFLOW — follow this exact order, no deviation:
 
-**DO NOT** (these will fail and waste turns):
-- ~~Run `main.py` directly without `--pre-analyzed` flags~~ → crashes (no MCP_PROXY_TOKEN)
-- ~~Use `Read` tool to view images and self-analyze~~ → your analysis quality is far below Gemini 3 Pro
-- ~~Improvise your own analysis criteria~~ → use `--export-prompts` for professional prompts
+1. `download_file` each user photo → save the **download URLs** (you need them for step 4)
+2. `curl` download photos to local disk
+3. `python3 <skill_dir>/main.py dummy --export-prompts` → get the analysis prompt text
+4. **`batch_understand_images`** tool with `prompt` = exported analysis prompt, `image_urls` = the download URLs from step 1 → returns Gemini 3 Pro analysis
+5. Parse Gemini result → write `analysis.json`
+6. Generate blog/comic content JSON
+7. `imagen_generate` with `prompt` = cover/comic description AND `image_urls` = same download URLs from step 1 → AI image based on real photos
+8. Run script with `--pre-analyzed` flags
+9. `upload_file` all outputs
+
+### ABSOLUTE PROHIBITIONS (violating these will produce garbage output):
+
+- **NEVER use `Read` on image files** — Read-based self-analysis is far below Gemini 3 Pro quality. You MUST use `batch_understand_images` for ALL image analysis.
+- **NEVER hand-write analysis JSON** — analysis MUST come from `batch_understand_images` (Gemini 3 Pro).
+- **NEVER call `imagen_generate` without `image_urls`** — pure text prompts generate AI-imagined images unrelated to user photos. Always pass the photo download URLs.
+- **NEVER call `TodoWrite`** — it wastes turns. Track progress internally.
+- **NEVER run `main.py` without `--pre-analyzed`** — crashes (no MCP_PROXY_TOKEN).
 
 ## Running — photo-blog
 

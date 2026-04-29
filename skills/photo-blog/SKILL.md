@@ -118,14 +118,17 @@ Pass `--theme` to guide generation toward a specific angle. If the photos don't 
 
 In sandbox, Python cannot call MCP tools. You must orchestrate the workflow yourself.
 
-### DO NOT (these will fail):
-- ~~Run `main.py` without `--pre-analyzed`~~ → crashes (no MCP_PROXY_TOKEN)
-- ~~Use `Read` tool to view images and self-analyze~~ → your analysis quality is far below Gemini 3 Pro
-- ~~Improvise analysis criteria~~ → use `--export-prompts` for professional prompts
+### ABSOLUTE PROHIBITIONS (violating these produces garbage output):
+- **NEVER use `Read` on image files** — Read-based self-analysis is far below Gemini 3 Pro. You MUST use `batch_understand_images`.
+- **NEVER hand-write analysis JSON yourself** — analysis MUST come from `batch_understand_images` (Gemini 3 Pro).
+- **NEVER call `imagen_generate` without `image_urls`** — pass the photo download URLs so the cover is based on real photos.
+- **NEVER call `TodoWrite`** — wastes turns.
+- **NEVER run `main.py` without `--pre-analyzed`** — crashes (no MCP_PROXY_TOKEN).
 
 ### Step-by-step:
 
-1. **Download images** — use `download_file` to get each image URL, then `curl` to save locally.
+1. **Download images** — use `download_file` to get each image's download URL, then `curl` to save locally.
+   **Save the download URLs** — you need them for steps 3 and 5.
 
 2. **Export professional prompts** (run once, cache the output):
    ```bash
@@ -133,10 +136,10 @@ In sandbox, Python cannot call MCP tools. You must orchestrate the workflow your
    ```
    Outputs JSON with `analysis_prompt`, `blog_generation_prompt_template`, `scoring_weights`, `tier_thresholds`.
 
-3. **Analyze images using `batch_understand_images` tool**:
+3. **Analyze images using `batch_understand_images` tool** (MANDATORY — do NOT skip):
    - Call `batch_understand_images` with:
      - `prompt`: the `analysis_prompt` from step 2
-     - `image_urls`: array of the downloaded image URLs (the `download_file` returned URLs)
+     - `image_urls`: array of the download URLs from step 1 (NOT local file paths)
    - Parse the Gemini response and structure it into `analysis.json`:
      - Extract: scene, people, action, mood, location, time_of_day, objects, narrative_hook
      - Score on 5 axes per `scoring_weights`:
@@ -186,8 +189,10 @@ In sandbox, Python cannot call MCP tools. You must orchestrate the workflow your
    - **CRITICAL**: insights array must have exactly one entry per highlight photo
    - Save as `blog.json`
 
-5. **Generate cover image** (optional):
-   - Call `imagen_generate` MCP tool with a cover style prompt
+5. **Generate cover image**:
+   - Call `imagen_generate` MCP tool with:
+     - `prompt`: cover style description
+     - `image_urls`: the SAME download URLs from step 1 (so the cover reflects real photo content)
    - Download the result and save as `cover.png`
 
 6. **Run the script** with pre-computed data:

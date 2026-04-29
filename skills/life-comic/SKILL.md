@@ -120,14 +120,17 @@ Pass `--theme` to guide comic theme. Falls back to auto-detected themes if photo
 
 In sandbox, Python cannot call MCP tools. You must orchestrate the workflow yourself.
 
-### DO NOT (these will fail):
-- ~~Run `main.py` without `--pre-analyzed`~~ → crashes (no MCP_PROXY_TOKEN)
-- ~~Use `Read` tool to view images and self-analyze~~ → your analysis quality is far below Gemini 3 Pro
-- ~~Improvise analysis criteria~~ → use `--export-prompts` for professional prompts
+### ABSOLUTE PROHIBITIONS (violating these produces garbage output):
+- **NEVER use `Read` on image files** — Read-based self-analysis is far below Gemini 3 Pro. You MUST use `batch_understand_images`.
+- **NEVER hand-write analysis JSON yourself** — analysis MUST come from `batch_understand_images` (Gemini 3 Pro).
+- **NEVER call `imagen_generate` without `image_urls`** — pass the photo download URLs so the comic reflects real photos.
+- **NEVER call `TodoWrite`** — wastes turns.
+- **NEVER run `main.py` without `--pre-analyzed`** — crashes (no MCP_PROXY_TOKEN).
 
 ### Step-by-step:
 
-1. **Download images** — use `download_file` to get each image URL, then `curl` to save locally.
+1. **Download images** — use `download_file` to get each image's download URL, then `curl` to save locally.
+   **Save the download URLs** — you need them for steps 3 and 5.
 
 2. **Export professional prompts** (run once, cache the output):
    ```bash
@@ -135,10 +138,10 @@ In sandbox, Python cannot call MCP tools. You must orchestrate the workflow your
    ```
    Outputs JSON with `analysis_prompt`, `storyboard_prompt_template`, `scoring_weights`, `tier_thresholds`.
 
-3. **Analyze images using `batch_understand_images` tool**:
+3. **Analyze images using `batch_understand_images` tool** (MANDATORY — do NOT skip):
    - Call `batch_understand_images` with:
      - `prompt`: the `analysis_prompt` from step 2
-     - `image_urls`: array of the downloaded image URLs (the `download_file` returned URLs)
+     - `image_urls`: array of the download URLs from step 1 (NOT local file paths)
    - Parse the Gemini response and structure it into `analysis.json`:
      - Extract: scene_summary, character_desc, action_desc, emotion, environment, time_of_day, comic_panel_desc
      - Score on 3 axes per `scoring_weights`:
@@ -193,8 +196,10 @@ In sandbox, Python cannot call MCP tools. You must orchestrate the workflow your
    - **CRITICAL**: panels array must have exactly one entry per selected moment
    - Save as `storyboard.json`
 
-5. **Generate comic image** (optional):
-   - Call `imagen_generate` MCP tool with comic style prompt and reference photos
+5. **Generate comic image**:
+   - Call `imagen_generate` MCP tool with:
+     - `prompt`: comic style description
+     - `image_urls`: the SAME download URLs from step 1 (so the comic reflects real photo content)
    - Download result to a directory (e.g., `./comic_imgs/`)
 
 6. **Run the script** with pre-computed data:
