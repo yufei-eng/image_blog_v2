@@ -11,7 +11,7 @@ description: >-
 argument-hint: <image_directory_or_file>
 metadata:
   execution_mode: sandbox
-  adk_additional_tools:
+  sandbox_tools:
     - imagen_generate
     - batch_understand_images
 ---
@@ -120,13 +120,12 @@ In sandbox, Python cannot call MCP tools. You must orchestrate the workflow your
 
 ### DO NOT (these will fail):
 - ~~Run `main.py` without `--pre-analyzed`~~ → crashes (no MCP_PROXY_TOKEN)
-- ~~Call `batch_understand_images`~~ → returns 400 (MIME type: application/octet-stream)
+- ~~Use `Read` tool to view images and self-analyze~~ → your analysis quality is far below Gemini 3 Pro
 - ~~Improvise analysis criteria~~ → use `--export-prompts` for professional prompts
 
 ### Step-by-step:
 
-1. **View images with the Read tool** — use `Read` on each image file to see its content.
-   This is your primary image understanding method in sandbox mode.
+1. **Download images** — use `download_file` to get each image URL, then `curl` to save locally.
 
 2. **Export professional prompts** (run once, cache the output):
    ```bash
@@ -134,8 +133,11 @@ In sandbox, Python cannot call MCP tools. You must orchestrate the workflow your
    ```
    Outputs JSON with `analysis_prompt`, `blog_generation_prompt_template`, `scoring_weights`, `tier_thresholds`.
 
-3. **Analyze images using the exported `analysis_prompt`**:
-   - Based on what you saw in step 1, apply the `analysis_prompt` criteria:
+3. **Analyze images using `batch_understand_images` tool**:
+   - Call `batch_understand_images` with:
+     - `prompt`: the `analysis_prompt` from step 2
+     - `image_urls`: array of the downloaded image URLs (the `download_file` returned URLs)
+   - Parse the Gemini response and structure it into `analysis.json`:
      - Extract: scene, people, action, mood, location, time_of_day, objects, narrative_hook
      - Score on 5 axes per `scoring_weights`:
        visual_appeal(0.20), story_value(0.25), emotion_intensity(0.25),

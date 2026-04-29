@@ -11,8 +11,9 @@ description: >-
 argument-hint: <image_directory_or_file>
 metadata:
   execution_mode: sandbox
-  adk_additional_tools:
+  sandbox_tools:
     - imagen_generate
+    - batch_understand_images
 ---
 
 # Image Blog & Life Comic Skill
@@ -58,14 +59,13 @@ In sandbox, Python scripts **cannot** call MCP tools directly. You must orchestr
 1. Read the sub-skill's SKILL.md for the detailed Sandbox Execution Workflow:
    - Photo blog: `skills/photo-blog/SKILL.md` → "Sandbox Execution Workflow" section
    - Life comic: `skills/life-comic/SKILL.md` → "Sandbox Execution Workflow" section
-2. Use the `Read` tool to view each image file directly (you have vision capability)
-3. Run `python3 <skill_dir>/main.py dummy --export-prompts` to get professional analysis prompts
-4. Create analysis JSON and content JSON files, then run the script with `--pre-analyzed` flags
+2. Run `python3 <skill_dir>/main.py dummy --export-prompts` to get professional analysis prompts
+3. Call `batch_understand_images` tool with **downloaded image URLs** + the exported analysis prompt to analyze photos
+4. Create analysis JSON from `batch_understand_images` results, then run the script with `--pre-analyzed` flags
 
 **DO NOT** (these will fail and waste turns):
 - ~~Run `main.py` directly without `--pre-analyzed` flags~~ → crashes (no MCP_PROXY_TOKEN)
-- ~~Call `batch_understand_images` with image URLs~~ → returns 400 (MIME type issue)
-- ~~Call `all_translate` with image URLs~~ → same 400 error
+- ~~Use `Read` tool to view images and self-analyze~~ → your analysis quality is far below Gemini 3 Pro
 - ~~Improvise your own analysis criteria~~ → use `--export-prompts` for professional prompts
 
 ## Running — photo-blog
