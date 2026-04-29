@@ -7,15 +7,18 @@ import os
 from typing import Dict, List, Optional
 
 
-def _img_to_base64(path: str, max_width: int = 800, skip_exif: bool = False) -> str:
-    """Convert image to base64 with optional EXIF orientation fix and resize."""
+def _img_to_base64(path: str, max_width: int = 800, skip_exif: bool = False) -> tuple[str, str]:
+    """Convert image to base64 data URI components.
+
+    Returns (base64_str, mime_type) — e.g. ("iVBOR...", "image/jpeg").
+    """
     try:
         from PIL import Image, ImageOps
         import io
         img = Image.open(path)
         if not skip_exif:
             img = ImageOps.exif_transpose(img)
-        if img.mode in ("RGBA", "P", "LA"):
+        if img.mode != "RGB":
             img = img.convert("RGB")
         w, h = img.size
         if w > max_width:
@@ -23,10 +26,15 @@ def _img_to_base64(path: str, max_width: int = 800, skip_exif: bool = False) -> 
             img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=85)
-        return base64.b64encode(buf.getvalue()).decode("utf-8")
-    except Exception:
+        return base64.b64encode(buf.getvalue()).decode("utf-8"), "image/jpeg"
+    except Exception as e:
+        print(f"  [WARN] PIL failed for {os.path.basename(path)}: {e}")
+        ext = os.path.splitext(path)[1].lower().lstrip(".")
+        mime_map = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+                    "webp": "image/webp", "gif": "image/gif"}
+        mime = mime_map.get(ext, "image/png")
         with open(path, "rb") as f:
-            return base64.b64encode(f.read()).decode("utf-8")
+            return base64.b64encode(f.read()).decode("utf-8"), mime
 
 
 _LABELS = {
@@ -65,26 +73,26 @@ def render_blog_html(
     tip = blog_content.get("tip", "")
     footer_date = blog_content.get("footer_date", "")
 
-    hero_b64 = ""
+    hero_b64, hero_mime = "", "image/jpeg"
     if cover_path and os.path.exists(cover_path):
-        hero_b64 = _img_to_base64(cover_path, max_width=1200)
+        hero_b64, hero_mime = _img_to_base64(cover_path, max_width=1200)
     elif highlight_paths and hero_idx < len(highlight_paths):
         skip = orientation_flags and hero_idx < len(orientation_flags) and not orientation_flags[hero_idx]
-        hero_b64 = _img_to_base64(highlight_paths[hero_idx], max_width=1000, skip_exif=skip)
+        hero_b64, hero_mime = _img_to_base64(highlight_paths[hero_idx], max_width=1000, skip_exif=skip)
 
     insight_blocks = []
     for ins in insights:
         idx = ins.get("image_index", 0)
         text = ins.get("text", "")
-        img_b64 = ""
+        img_b64, img_mime = "", "image/jpeg"
         if idx < len(highlight_paths):
             skip = orientation_flags and idx < len(orientation_flags) and not orientation_flags[idx]
-            img_b64 = _img_to_base64(highlight_paths[idx], max_width=600, skip_exif=skip)
-        insight_blocks.append({"text": text, "img_b64": img_b64})
+            img_b64, img_mime = _img_to_base64(highlight_paths[idx], max_width=600, skip_exif=skip)
+        insight_blocks.append({"text": text, "img_b64": img_b64, "img_mime": img_mime})
 
     insights_html = ""
     for i, block in enumerate(insight_blocks):
-        img_tag = f'<img src="data:image/jpeg;base64,{block["img_b64"]}" alt="insight-{i}" class="insight-img" loading="lazy">' if block["img_b64"] else ""
+        img_tag = f'<img src="data:{block["img_mime"]};base64,{block["img_b64"]}" alt="insight-{i}" class="insight-img" loading="lazy">' if block["img_b64"] else ""
         insights_html += f"""
         <div class="insight-card">
             <div class="insight-image">{img_tag}</div>
@@ -222,7 +230,7 @@ h1 {{
 
 <div class="page">
     <div class="hero-section">
-        {"<img src='data:image/jpeg;base64," + hero_b64 + "' alt='hero' class='hero-img'>" if hero_b64 else ""}
+        {"<img src='data:" + hero_mime + ";base64," + hero_b64 + "' alt='hero' class='hero-img'>" if hero_b64 else ""}
         <div class="hero-overlay">
             <h1>{title}</h1>
         </div>

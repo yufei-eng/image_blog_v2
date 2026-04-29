@@ -6,13 +6,14 @@ import os
 from typing import Dict, List, Optional
 
 
-def _img_to_base64(path: str, max_width: int = 1000) -> str:
+def _img_to_base64(path: str, max_width: int = 1000) -> tuple[str, str]:
+    """Convert image to base64. Returns (base64_str, mime_type)."""
     try:
         from PIL import Image, ImageOps
         import io
         img = Image.open(path)
         img = ImageOps.exif_transpose(img)
-        if img.mode in ("RGBA", "P", "LA"):
+        if img.mode != "RGB":
             img = img.convert("RGB")
         w, h = img.size
         if w > max_width:
@@ -20,10 +21,15 @@ def _img_to_base64(path: str, max_width: int = 1000) -> str:
             img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=90)
-        return base64.b64encode(buf.getvalue()).decode("utf-8")
-    except Exception:
+        return base64.b64encode(buf.getvalue()).decode("utf-8"), "image/jpeg"
+    except Exception as e:
+        print(f"  [WARN] PIL failed for {os.path.basename(path)}: {e}")
+        ext = os.path.splitext(path)[1].lower().lstrip(".")
+        mime_map = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+                    "webp": "image/webp", "gif": "image/gif"}
+        mime = mime_map.get(ext, "image/png")
         with open(path, "rb") as f:
-            return base64.b64encode(f.read()).decode("utf-8")
+            return base64.b64encode(f.read()).decode("utf-8"), mime
 
 
 def render_comic_html(
@@ -52,26 +58,26 @@ def render_comic_html(
     footer_date = storyboard.get("footer_date", "")
     panels = storyboard.get("panels", [])
 
-    comic_b64 = ""
+    comic_b64, comic_mime = "", "image/jpeg"
     if comic_image_path and os.path.exists(comic_image_path):
-        comic_b64 = _img_to_base64(comic_image_path, max_width=1200)
+        comic_b64, comic_mime = _img_to_base64(comic_image_path, max_width=1200)
 
     fallback_gallery = ""
     if not comic_b64 and reference_photo_paths:
         imgs_html = ""
         for i, pp in enumerate(reference_photo_paths[:6]):
-            b64 = _img_to_base64(pp, max_width=400)
+            b64, mime = _img_to_base64(pp, max_width=400)
             emotion_tag = panels[i].get("emotion_tag", "") if i < len(panels) else ""
             imgs_html += f"""
             <div class="fallback-panel">
-                <img src="data:image/jpeg;base64,{b64}" alt="panel-{i}" class="fallback-img">
+                <img src="data:{mime};base64,{b64}" alt="panel-{i}" class="fallback-img">
                 <span class="panel-tag">{emotion_tag}</span>
             </div>"""
         fallback_gallery = f'<div class="fallback-grid">{imgs_html}</div>'
 
     comic_section = ""
     if comic_b64:
-        comic_section = f'<img src="data:image/jpeg;base64,{comic_b64}" alt="comic" class="comic-img">'
+        comic_section = f'<img src="data:{comic_mime};base64,{comic_b64}" alt="comic" class="comic-img">'
     elif fallback_gallery:
         comic_section = fallback_gallery
 
