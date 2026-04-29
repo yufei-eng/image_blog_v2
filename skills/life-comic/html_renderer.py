@@ -7,14 +7,17 @@ from typing import Dict, List, Optional
 
 
 def _img_to_base64(path: str, max_width: int = 1000) -> tuple[str, str]:
-    """Convert image to base64. Returns (base64_str, mime_type)."""
+    """Convert image to base64. Returns (base64_str, mime_type).
+
+    Handles RGBA (composite on white), RGBa (premultiplied alpha),
+    I;16 (16-bit depth), and other PIL modes robustly.
+    """
     try:
         from PIL import Image, ImageOps
         import io
         img = Image.open(path)
         img = ImageOps.exif_transpose(img)
-        if img.mode != "RGB":
-            img = img.convert("RGB")
+        img = _safe_convert_rgb(img)
         w, h = img.size
         if w > max_width:
             ratio = max_width / w
@@ -30,6 +33,27 @@ def _img_to_base64(path: str, max_width: int = 1000) -> tuple[str, str]:
         mime = mime_map.get(ext, "image/png")
         with open(path, "rb") as f:
             return base64.b64encode(f.read()).decode("utf-8"), mime
+
+
+def _safe_convert_rgb(img):
+    """Convert any PIL image mode to RGB safely."""
+    from PIL import Image
+
+    mode = img.mode
+    if mode == "RGB":
+        return img
+    if mode == "RGBa":
+        img = img.convert("RGBA")
+        mode = "RGBA"
+    if mode in ("RGBA", "LA", "PA"):
+        bg = Image.new("RGB", img.size, (255, 255, 255))
+        if mode != "RGBA":
+            img = img.convert("RGBA")
+        bg.paste(img, mask=img.split()[3])
+        return bg
+    if mode.startswith("I;16") or mode in ("I", "F"):
+        return img.convert("L").convert("RGB")
+    return img.convert("RGB")
 
 
 def render_comic_html(
