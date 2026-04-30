@@ -96,6 +96,31 @@ def _normalize_analysis(pre_data, image_dir, all_key="all", selected_key="highli
     return {all_key: all_items, selected_key: selected_items}
 
 
+def _load_image_urls(arg: str) -> list[str]:
+    """Load image URLs from a JSON file or inline JSON string."""
+    if os.path.isfile(arg):
+        with open(arg, encoding="utf-8") as f:
+            return json.load(f)
+    return json.loads(arg)
+
+
+def _build_cover_prompt_from_blog(blog: dict) -> str:
+    """Build the imagen_generate cover prompt from blog content dict."""
+    from cover_generator import (_extract_cover_context, _load_template_library,
+                                  _match_template, _build_cover_prompt, _build_fallback_prompt)
+    lang = blog.get("_lang", "en")
+    ctx = _extract_cover_context(blog)
+    templates = _load_template_library()
+    if templates:
+        template = _match_template(templates, ctx)
+        prompt = _build_cover_prompt(template, ctx, lang=lang)
+        print(f"[TEMPLATE] {template.get('style_category', '?')} / {template.get('layout_type', '?')}", file=sys.stderr)
+    else:
+        prompt = _build_fallback_prompt(ctx, lang=lang)
+        print("[TEMPLATE] fallback (no template library)", file=sys.stderr)
+    return prompt
+
+
 def main():
     parser = argparse.ArgumentParser(description="Photo Blog Generator")
     parser.add_argument("input", help="Image directory or file path")
@@ -121,23 +146,46 @@ def main():
                         help="Export prompt templates as JSON and exit (for sandbox mode)")
     parser.add_argument("--build-cover-prompt", default=None,
                         help="Build cover imagen prompt from blog content JSON and exit (for sandbox mode)")
+    parser.add_argument("--emit-analyze-call", action="store_true",
+                        help="Output complete image_understand MCP tool call JSON and exit")
+    parser.add_argument("--emit-imagen-call", default=None,
+                        help="Build complete imagen_generate call from blog content JSON and exit")
+    parser.add_argument("--image-urls", default=None,
+                        help="JSON array of image download URLs (file path or inline JSON)")
     args = parser.parse_args()
 
+    if args.emit_analyze_call:
+        from image_analyzer import ANALYSIS_PROMPT
+        urls = _load_image_urls(args.image_urls) if args.image_urls else []
+        call = {
+            "tool_name": "image_understand",
+            "arguments": {
+                "prompt": ANALYSIS_PROMPT,
+                "image_urls": urls or ["<REPLACE_WITH_DOWNLOAD_URL_1>", "<REPLACE_WITH_DOWNLOAD_URL_2>"],
+            }
+        }
+        print(json.dumps(call, ensure_ascii=False, indent=2))
+        sys.exit(0)
+
+    if args.emit_imagen_call:
+        with open(args.emit_imagen_call, encoding="utf-8") as f:
+            blog = json.load(f)
+        prompt = _build_cover_prompt_from_blog(blog)
+        urls = _load_image_urls(args.image_urls) if args.image_urls else []
+        call = {
+            "tool_name": "imagen_generate",
+            "arguments": {
+                "prompt": prompt,
+                "image_urls": urls or ["<REPLACE_WITH_DOWNLOAD_URL_1>", "<REPLACE_WITH_DOWNLOAD_URL_2>"],
+            }
+        }
+        print(json.dumps(call, ensure_ascii=False, indent=2))
+        sys.exit(0)
+
     if args.build_cover_prompt:
-        from cover_generator import _extract_cover_context, _load_template_library, _match_template, _build_cover_prompt, _build_fallback_prompt
         with open(args.build_cover_prompt, encoding="utf-8") as f:
             blog = json.load(f)
-        lang = blog.get("_lang", "en")
-        ctx = _extract_cover_context(blog)
-        templates = _load_template_library()
-        if templates:
-            template = _match_template(templates, ctx)
-            prompt = _build_cover_prompt(template, ctx, lang=lang)
-            print(f"[TEMPLATE] {template.get('style_category', '?')} / {template.get('layout_type', '?')}", file=sys.stderr)
-        else:
-            prompt = _build_fallback_prompt(ctx, lang=lang)
-            print("[TEMPLATE] fallback (no template library)", file=sys.stderr)
-        print(prompt)
+        print(_build_cover_prompt_from_blog(blog))
         sys.exit(0)
 
     if args.export_prompts:

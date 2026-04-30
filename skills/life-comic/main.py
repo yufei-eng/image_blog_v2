@@ -87,6 +87,32 @@ def _normalize_analysis(pre_data, image_dir, all_key="all", selected_key="select
     return {all_key: all_items, selected_key: selected_items}
 
 
+def _load_image_urls(arg: str) -> list[str]:
+    """Load image URLs from a JSON file or inline JSON string."""
+    if os.path.isfile(arg):
+        with open(arg, encoding="utf-8") as f:
+            return json.load(f)
+    return json.loads(arg)
+
+
+def _build_comic_prompt_from_storyboard(sb: dict) -> str:
+    """Build the imagen_generate prompt from a storyboard dict."""
+    from comic_generator import COMIC_IMAGE_PROMPT_TEMPLATE
+    panels = sb.get("panels", [])
+    panel_descs = ""
+    for i, p in enumerate(panels):
+        desc = p.get("scene_description", "")[:120]
+        emotion_tag = p.get("emotion_tag", "")
+        composition = p.get("panel_composition", "")
+        panel_descs += f"\nPanel {i+1} ({emotion_tag}): {desc} Composition: {composition}."
+    return COMIC_IMAGE_PROMPT_TEMPLATE.format(
+        panel_count=len(panels),
+        theme=sb.get("theme", "Life Comic"),
+        emotional_arc=sb.get("emotional_arc", ""),
+        panel_descriptions=panel_descs,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description="Life Comic Generator")
     parser.add_argument("input", help="Image directory or file path")
@@ -110,26 +136,46 @@ def main():
                         help="Export prompt templates as JSON and exit (for sandbox mode)")
     parser.add_argument("--build-comic-prompt", default=None,
                         help="Build imagen prompt from storyboard JSON and exit (for sandbox mode)")
+    parser.add_argument("--emit-analyze-call", action="store_true",
+                        help="Output complete image_understand MCP tool call JSON and exit")
+    parser.add_argument("--emit-imagen-call", default=None,
+                        help="Build complete imagen_generate call from storyboard JSON and exit")
+    parser.add_argument("--image-urls", default=None,
+                        help="JSON array of image download URLs (file path or inline JSON)")
     args = parser.parse_args()
 
+    if args.emit_analyze_call:
+        from image_analyzer import COMIC_ANALYSIS_PROMPT
+        urls = _load_image_urls(args.image_urls) if args.image_urls else []
+        call = {
+            "tool_name": "image_understand",
+            "arguments": {
+                "prompt": COMIC_ANALYSIS_PROMPT,
+                "image_urls": urls or ["<REPLACE_WITH_DOWNLOAD_URL_1>", "<REPLACE_WITH_DOWNLOAD_URL_2>"],
+            }
+        }
+        print(json.dumps(call, ensure_ascii=False, indent=2))
+        sys.exit(0)
+
+    if args.emit_imagen_call:
+        with open(args.emit_imagen_call, encoding="utf-8") as f:
+            sb = json.load(f)
+        prompt = _build_comic_prompt_from_storyboard(sb)
+        urls = _load_image_urls(args.image_urls) if args.image_urls else []
+        call = {
+            "tool_name": "imagen_generate",
+            "arguments": {
+                "prompt": prompt,
+                "image_urls": urls or ["<REPLACE_WITH_DOWNLOAD_URL_1>", "<REPLACE_WITH_DOWNLOAD_URL_2>"],
+            }
+        }
+        print(json.dumps(call, ensure_ascii=False, indent=2))
+        sys.exit(0)
+
     if args.build_comic_prompt:
-        from comic_generator import COMIC_IMAGE_PROMPT_TEMPLATE
         with open(args.build_comic_prompt, encoding="utf-8") as f:
             sb = json.load(f)
-        panels = sb.get("panels", [])
-        panel_descs = ""
-        for i, p in enumerate(panels):
-            desc = p.get("scene_description", "")[:120]
-            emotion_tag = p.get("emotion_tag", "")
-            composition = p.get("panel_composition", "")
-            panel_descs += f"\nPanel {i+1} ({emotion_tag}): {desc} Composition: {composition}."
-        prompt = COMIC_IMAGE_PROMPT_TEMPLATE.format(
-            panel_count=len(panels),
-            theme=sb.get("theme", "Life Comic"),
-            emotional_arc=sb.get("emotional_arc", ""),
-            panel_descriptions=panel_descs,
-        )
-        print(prompt)
+        print(_build_comic_prompt_from_storyboard(sb))
         sys.exit(0)
 
     if args.export_prompts:

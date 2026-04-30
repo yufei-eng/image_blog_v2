@@ -89,6 +89,9 @@ python3 <SKILL_DIR>/main.py <image_dir> \
 | `--pre-analyzed` | Load pre-analyzed moment data from JSON (skip MCP analysis) | none |
 | `--storyboard` | Load pre-generated storyboard from JSON (skip MCP storyboard gen) | none |
 | `--comic-images-dir` | Directory with pre-generated comic images (skip MCP image gen) | none |
+| `--emit-analyze-call` | Output complete `image_understand` MCP tool call JSON and exit | none |
+| `--emit-imagen-call` | Output complete `imagen_generate` MCP tool call JSON from storyboard and exit | none |
+| `--image-urls` | JSON array of image download URLs (file path or inline JSON), used with `--emit-*` | none |
 
 ### Output Format Selection
 
@@ -125,22 +128,23 @@ In sandbox, Python cannot call MCP tools. You must orchestrate the workflow your
 - **NEVER call `imagen_generate` without `image_urls`** — pass the photo download URLs so the comic reflects real photos.
 - **NEVER call `TodoWrite`** — wastes turns.
 - **NEVER run `main.py` without `--pre-analyzed`** — crashes (no MCP_PROXY_TOKEN).
+- **NEVER rewrite prompts from `--build-comic-prompt`** — pass the EXACT output as-is. The MCP proxy will REJECT modified prompts.
+- **NEVER write your own image analysis prompt** — MUST use the `analysis_prompt` from `--export-prompts`. The MCP proxy will REJECT custom prompts.
 
 ### Step-by-step:
 
 1. **Download images** — use `download_file` to get each image's download URL, then `curl` to save locally.
-   **Save the download URLs** — you need them for steps 3 and 5.
-
-2. **Export professional prompts** (run once, cache the output):
+   **Save the download URLs to a file** — you need them for steps 2 and 4:
    ```bash
-   python3 <SKILL_DIR>/main.py dummy --export-prompts 2>/dev/null
+   echo '["<url1>", "<url2>", ...]' > image_urls.json
    ```
-   Outputs JSON with `analysis_prompt`, `storyboard_prompt_template`, `scoring_weights`, `tier_thresholds`.
 
-3. **Analyze images using `image_understand` tool** (MANDATORY — do NOT skip):
-   - Call `image_understand` with:
-     - `prompt`: the `analysis_prompt` from step 2
-     - `image_urls`: array of the download URLs from step 1 (NOT local file paths)
+2. **Get the complete `image_understand` tool call** (MANDATORY — do NOT skip):
+   ```bash
+   python3 <SKILL_DIR>/main.py dummy --emit-analyze-call --image-urls image_urls.json 2>/dev/null
+   ```
+   This outputs a complete JSON with `tool_name` and `arguments` (including the professional analysis prompt).
+   **Call `image_understand` with the EXACT `arguments` from this output.** Do NOT modify the prompt.
    - Parse the Gemini response and structure it into `analysis.json`:
      - Extract: scene_summary, character_desc, action_desc, emotion, environment, time_of_day, comic_panel_desc
      - Score on 3 axes per `scoring_weights`:
@@ -168,8 +172,8 @@ In sandbox, Python cannot call MCP tools. You must orchestrate the workflow your
      }
      ```
 
-4. **Generate storyboard using the exported `storyboard_prompt_template`**:
-   - Fill in: `panels_json`, `theme_instruction`, `lang_instruction`, `panel_count`
+3. **Generate storyboard** — you generate this yourself as Claude:
+   - Use the analysis data to create a narrative storyboard
    - Generate storyboard JSON matching this **exact structure**:
      ```json
      {
@@ -195,22 +199,19 @@ In sandbox, Python cannot call MCP tools. You must orchestrate the workflow your
    - **CRITICAL**: panels array must have exactly one entry per selected moment
    - Save as `storyboard.json`
 
-5. **Generate comic image**:
-   - First, build the comic imagen prompt using the dynamic manga layout template:
-     ```bash
-     python3 <SKILL_DIR>/main.py dummy --build-comic-prompt storyboard.json 2>/dev/null
-     ```
-     This outputs the exact prompt to use. **NEVER write your own comic prompt** — the built-in template contains critical dynamic manga layout instructions (irregular panel sizes, emotional weight-based sizing, diagonal borders, etc.) that you cannot replicate.
-   - Call `imagen_generate` MCP tool with:
-     - `prompt`: the exact output from the command above
-     - `image_urls`: the SAME download URLs from step 1 (REQUIRED — so the comic reflects real photo content)
+4. **Get the complete `imagen_generate` tool call**:
+   ```bash
+   python3 <SKILL_DIR>/main.py dummy --emit-imagen-call storyboard.json --image-urls image_urls.json 2>/dev/null
+   ```
+   This outputs a complete JSON with `tool_name` and `arguments` (including the professional comic prompt with dynamic manga layout instructions).
+   **Call `imagen_generate` with the EXACT `arguments` from this output.** Do NOT modify the prompt.
    - **Download via signed URL** (do NOT `curl` the imagen_generate URL directly — it requires auth and will return a Google OAuth HTML page):
      1. Extract the numeric file ID from the returned URL (e.g. `1312563282387555` from `.../media/file/1312563282387555.png`)
      2. Call `download_file` with `{"file_id": "<extracted_id>"}` to get a signed URL
      3. `curl` the signed URL to save to `./comic_imgs/`
      4. Verify the file is a real image (`file <path>` should show PNG/JPEG, not HTML)
 
-6. **Run the script** with pre-computed data:
+5. **Run the script** with pre-computed data:
    ```bash
    python3 <SKILL_DIR>/main.py <image_dir> \
        --pre-analyzed analysis.json \
@@ -220,7 +221,7 @@ In sandbox, Python cannot call MCP tools. You must orchestrate the workflow your
        --format all
    ```
 
-7. **Upload and deliver** — Upload generated files and provide download links.
+6. **Upload and deliver** — Upload generated files and provide download links.
 
 ## Configuration
 
