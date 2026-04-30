@@ -95,6 +95,44 @@ _LABELS = {
 }
 
 
+def _normalize_blog(d: dict) -> dict:
+    """Normalize alternative field names from LLM output to canonical format."""
+    if "description" not in d:
+        for alt in ("subtitle", "summary", "desc"):
+            if alt in d:
+                d["description"] = {"text": d[alt]}
+                break
+    elif isinstance(d.get("description"), str):
+        d["description"] = {"text": d["description"]}
+    if "hero_image_index" not in d:
+        for alt in ("hero_index", "heroIndex", "cover_index"):
+            if alt in d:
+                d["hero_image_index"] = d[alt]
+                break
+    for ins in d.get("insights", []):
+        if "text" not in ins:
+            for alt in ("caption", "body", "description"):
+                if alt in ins:
+                    ins["text"] = ins[alt]
+                    break
+        if "image_index" not in ins:
+            for alt in ("photo_index", "photoIndex", "img_index"):
+                if alt in ins:
+                    ins["image_index"] = ins[alt]
+                    break
+    if "tip" not in d:
+        for alt in ("closing", "tips", "advice"):
+            if alt in d:
+                d["tip"] = d[alt]
+                break
+    if "footer_date" not in d:
+        for alt in ("date_line", "date", "dateLine"):
+            if alt in d:
+                d["footer_date"] = d[alt]
+                break
+    return d
+
+
 def render_blog_html(
     blog_content: dict,
     highlight_paths: List[str],
@@ -115,6 +153,7 @@ def render_blog_html(
     Returns:
         Absolute path to the generated HTML file
     """
+    blog_content = _normalize_blog(blog_content)
     lang = blog_content.get("_lang", "en")
     L = _LABELS.get(lang, _LABELS["en"])
     title = blog_content.get("title", L["default_title"])

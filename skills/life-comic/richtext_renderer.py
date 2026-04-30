@@ -7,6 +7,34 @@ import os
 from typing import Optional
 
 
+def _normalize_storyboard(d: dict) -> dict:
+    """Normalize alternative field names from LLM output to canonical format."""
+    narrative = d.get("narrative", {})
+    if "body" not in narrative:
+        parts = []
+        for key in ("opening", "subtitle", "summary"):
+            if narrative.get(key):
+                parts.append(narrative[key])
+        if narrative.get("closing"):
+            parts.append(narrative["closing"])
+        if parts:
+            narrative["body"] = " ".join(parts)
+    if "footer_date" not in d:
+        for alt in ("date_line", "date", "dateLine"):
+            if alt in d:
+                d["footer_date"] = d[alt]
+                break
+    for panel in d.get("panels", []):
+        if "panel_index" not in panel and "panel_number" in panel:
+            panel["panel_index"] = panel["panel_number"] - 1
+        if "emotion_tag" not in panel:
+            for alt in ("emotion", "mood", "tag"):
+                if alt in panel:
+                    panel["emotion_tag"] = panel[alt]
+                    break
+    return d
+
+
 def render_comic_richtext(
     storyboard: dict,
     comic_image_path: Optional[str],
@@ -14,6 +42,7 @@ def render_comic_richtext(
     output_path: str,
 ) -> str:
     """Render comic as Markdown for chat agents. Returns output path."""
+    storyboard = _normalize_storyboard(storyboard)
     lang = storyboard.get("_lang", "en")
     theme = storyboard.get("theme", "\u751f\u6d3b\u6f2b\u753b" if lang == "zh" else "Life Comic")
     narrative = storyboard.get("narrative", {})
