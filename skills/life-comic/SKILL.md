@@ -200,7 +200,11 @@ In sandbox, Python cannot call MCP tools. You must orchestrate the workflow your
    - Call `imagen_generate` MCP tool with:
      - `prompt`: comic style description
      - `image_urls`: the SAME download URLs from step 1 (so the comic reflects real photo content)
-   - Download result to a directory (e.g., `./comic_imgs/`)
+   - **Download via signed URL** (do NOT `curl` the imagen_generate URL directly — it requires auth and will return a Google OAuth HTML page):
+     1. Extract the numeric file ID from the returned URL (e.g. `1312563282387555` from `.../media/file/1312563282387555.png`)
+     2. Call `download_file` with `{"file_id": "<extracted_id>"}` to get a signed URL
+     3. `curl` the signed URL to save to `./comic_imgs/`
+     4. Verify the file is a real image (`file <path>` should show PNG/JPEG, not HTML)
 
 6. **Run the script** with pre-computed data:
    ```bash

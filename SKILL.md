@@ -64,9 +64,14 @@ In sandbox, Python scripts **cannot** call MCP tools directly. You must orchestr
 5. Parse Gemini result → write `analysis.json`
 6. Generate blog/comic content JSON
 7. **`imagen_generate`** — call ONCE PER SKILL being generated, with `image_urls` = same download URLs from step 1:
-   - **photo-blog**: generate AI cover image → `curl` download → pass as `--cover-path cover.png`. **NEVER use `--skip-cover`** — the AI cover is a core feature.
-   - **life-comic**: generate comic art image → `curl` download → pass via `--comic-images-dir`
+   - **photo-blog**: generate AI cover image → download via signed URL (see below) → pass as `--cover-path cover.png`
+   - **life-comic**: generate comic art image → download via signed URL (see below) → pass via `--comic-images-dir`
    - When running BOTH skills, you MUST call `imagen_generate` TWICE (once for cover, once for comic). Do NOT skip either.
+   - **CRITICAL — downloading generated images**: The URLs returned by `imagen_generate` (e.g. `https://test.migoo.ai/beeai/api/v1/media/file/1312563282387555.png`) require authentication and **cannot be downloaded with `curl` directly** (you'll get a Google OAuth HTML page instead of an image). To download:
+     1. Extract the numeric file ID from the URL path (e.g. `1312563282387555` from `.../media/file/1312563282387555.png`)
+     2. Call `download_file` with `{"file_id": "<extracted_id>"}` — this returns a **signed URL** (from `cqcp.shopee.sg`) that works without auth
+     3. `curl` the signed URL to save the image locally
+     4. **Verify** the downloaded file is a real image (check file size > 10KB and/or use `file` command) before passing it to the script
 8. Run script with `--pre-analyzed` flags AND the generated image paths from step 7
 9. `upload_file` all outputs
 
