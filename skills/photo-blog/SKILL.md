@@ -190,9 +190,14 @@ In sandbox, Python cannot call MCP tools. You must orchestrate the workflow your
    - Save as `blog.json`
 
 5. **Generate cover image** (MANDATORY — do NOT skip):
+   - First, build the cover prompt using the template matching system:
+     ```bash
+     python3 <SKILL_DIR>/main.py dummy --build-cover-prompt blog.json 2>/dev/null
+     ```
+     This outputs the exact prompt to use. **NEVER write your own cover prompt** — the template system selects the correct style (photographic, not illustration).
    - Call `imagen_generate` MCP tool with:
-     - `prompt`: cover style description
-     - `image_urls`: the SAME download URLs from step 1 (so the cover reflects real photo content)
+     - `prompt`: the exact output from the command above
+     - `image_urls`: the SAME download URLs from step 1 (REQUIRED — so the cover reflects real photo content)
    - **Download via signed URL** (do NOT `curl` the imagen_generate URL directly — it requires auth and will return a Google OAuth HTML page):
      1. Extract the numeric file ID from the returned URL (e.g. `1312563282387555` from `.../media/file/1312563282387555.png`)
      2. Call `download_file` with `{"file_id": "<extracted_id>"}` to get a signed URL

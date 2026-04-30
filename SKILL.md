@@ -62,24 +62,29 @@ In sandbox, Python scripts **cannot** call MCP tools directly. You must orchestr
 3. `python3 <skill_dir>/main.py dummy --export-prompts` → get the analysis prompt text
 4. **`image_understand`** tool with `prompt` = exported analysis prompt, `image_urls` = the download URLs from step 1 → returns Gemini 3 Pro analysis
 5. Parse Gemini result → write `analysis.json`
-6. Generate blog/comic content JSON
-7. **`imagen_generate`** — call ONCE PER SKILL being generated, with `image_urls` = same download URLs from step 1:
-   - **photo-blog**: generate AI cover image → download via signed URL (see below) → pass as `--cover-path cover.png`
-   - **life-comic**: generate comic art image → download via signed URL (see below) → pass via `--comic-images-dir`
+6. Generate blog/comic content JSON → save as `blog.json` / `storyboard.json`
+7. **Build imagen prompts** (MANDATORY — do NOT write your own prompt):
+   - **photo-blog cover**: `python3 <skill_dir>/skills/photo-blog/main.py dummy --build-cover-prompt blog.json 2>/dev/null`
+   - **life-comic image**: `python3 <skill_dir>/skills/life-comic/main.py dummy --build-comic-prompt storyboard.json 2>/dev/null`
+   - These commands output the exact prompt text to use with `imagen_generate`. **NEVER compose your own imagen prompt** — the built-in templates contain critical layout/style instructions (dynamic manga panel sizing, photographic cover style, etc.) that you cannot replicate.
+8. **`imagen_generate`** — call ONCE PER SKILL being generated:
+   - `prompt`: the exact output from step 7 (do NOT modify it)
+   - `image_urls`: the SAME download URLs from step 1 (REQUIRED — without these, the generated image will be generic AI art unrelated to user photos)
    - When running BOTH skills, you MUST call `imagen_generate` TWICE (once for cover, once for comic). Do NOT skip either.
    - **CRITICAL — downloading generated images**: The URLs returned by `imagen_generate` (e.g. `https://test.migoo.ai/beeai/api/v1/media/file/1312563282387555.png`) require authentication and **cannot be downloaded with `curl` directly** (you'll get a Google OAuth HTML page instead of an image). To download:
      1. Extract the numeric file ID from the URL path (e.g. `1312563282387555` from `.../media/file/1312563282387555.png`)
      2. Call `download_file` with `{"file_id": "<extracted_id>"}` — this returns a **signed URL** (from `cqcp.shopee.sg`) that works without auth
      3. `curl` the signed URL to save the image locally
      4. **Verify** the downloaded file is a real image (check file size > 10KB and/or use `file` command) before passing it to the script
-8. Run script with `--pre-analyzed` flags AND the generated image paths from step 7
-9. `upload_file` all outputs
+9. Run script with `--pre-analyzed` flags AND the generated image paths from step 8
+10. `upload_file` all outputs
 
 ### ABSOLUTE PROHIBITIONS (violating these will produce garbage output):
 
 - **NEVER use `Read` on image files** — Read-based self-analysis is far below Gemini 3 Pro quality. You MUST use `image_understand` for ALL image analysis.
 - **NEVER hand-write analysis JSON** — analysis MUST come from `image_understand` (Gemini 3 Pro).
 - **NEVER call `imagen_generate` without `image_urls`** — pure text prompts generate AI-imagined images unrelated to user photos. Always pass the photo download URLs.
+- **NEVER write your own imagen prompt** — use `--build-cover-prompt` / `--build-comic-prompt` to get the correct prompt. Hand-written prompts lose critical layout/style instructions (dynamic manga paneling, photographic cover style, etc.).
 - **NEVER call `TodoWrite`** — it wastes turns. Track progress internally.
 - **NEVER run `main.py` without `--pre-analyzed`** — crashes (no MCP_PROXY_TOKEN).
 

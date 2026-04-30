@@ -109,8 +109,7 @@ By default (`--format all`), all three formats are generated every time:
 
 ### Panel Count Support
 
-Supports **1 to 10** panels. The grid layout adapts automatically:
-- 1 panel: 1x1 | 2: 1x2 | 3: 1x3 | 4: 2x2 | 5-6: 2x3 | 7-8: 2x4 | 9: 3x3 | 10: 2x5
+Supports **1 to 10** panels. The layout uses dynamic manga-style composition with irregular, asymmetric panel sizes based on emotional weight — NOT uniform grids.
 
 ### Theme / Style Keywords
 
@@ -197,9 +196,14 @@ In sandbox, Python cannot call MCP tools. You must orchestrate the workflow your
    - Save as `storyboard.json`
 
 5. **Generate comic image**:
+   - First, build the comic imagen prompt using the dynamic manga layout template:
+     ```bash
+     python3 <SKILL_DIR>/main.py dummy --build-comic-prompt storyboard.json 2>/dev/null
+     ```
+     This outputs the exact prompt to use. **NEVER write your own comic prompt** — the built-in template contains critical dynamic manga layout instructions (irregular panel sizes, emotional weight-based sizing, diagonal borders, etc.) that you cannot replicate.
    - Call `imagen_generate` MCP tool with:
-     - `prompt`: comic style description
-     - `image_urls`: the SAME download URLs from step 1 (so the comic reflects real photo content)
+     - `prompt`: the exact output from the command above
+     - `image_urls`: the SAME download URLs from step 1 (REQUIRED — so the comic reflects real photo content)
    - **Download via signed URL** (do NOT `curl` the imagen_generate URL directly — it requires auth and will return a Google OAuth HTML page):
      1. Extract the numeric file ID from the returned URL (e.g. `1312563282387555` from `.../media/file/1312563282387555.png`)
      2. Call `download_file` with `{"file_id": "<extracted_id>"}` to get a signed URL

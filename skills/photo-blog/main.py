@@ -97,7 +97,26 @@ def main():
                         help="Pre-generated cover image path (skip MCP cover generation)")
     parser.add_argument("--export-prompts", action="store_true",
                         help="Export prompt templates as JSON and exit (for sandbox mode)")
+    parser.add_argument("--build-cover-prompt", default=None,
+                        help="Build cover imagen prompt from blog content JSON and exit (for sandbox mode)")
     args = parser.parse_args()
+
+    if args.build_cover_prompt:
+        from cover_generator import _extract_cover_context, _load_template_library, _match_template, _build_cover_prompt, _build_fallback_prompt
+        with open(args.build_cover_prompt, encoding="utf-8") as f:
+            blog = json.load(f)
+        lang = blog.get("_lang", "en")
+        ctx = _extract_cover_context(blog)
+        templates = _load_template_library()
+        if templates:
+            template = _match_template(templates, ctx)
+            prompt = _build_cover_prompt(template, ctx, lang=lang)
+            print(f"[TEMPLATE] {template.get('style_category', '?')} / {template.get('layout_type', '?')}", file=sys.stderr)
+        else:
+            prompt = _build_fallback_prompt(ctx, lang=lang)
+            print("[TEMPLATE] fallback (no template library)", file=sys.stderr)
+        print(prompt)
+        sys.exit(0)
 
     if args.export_prompts:
         from image_analyzer import ANALYSIS_PROMPT

@@ -86,16 +86,41 @@ def main():
                         help="Directory with pre-generated comic images (skip MCP image generation)")
     parser.add_argument("--export-prompts", action="store_true",
                         help="Export prompt templates as JSON and exit (for sandbox mode)")
+    parser.add_argument("--build-comic-prompt", default=None,
+                        help="Build imagen prompt from storyboard JSON and exit (for sandbox mode)")
     args = parser.parse_args()
+
+    if args.build_comic_prompt:
+        from comic_generator import COMIC_IMAGE_PROMPT_TEMPLATE
+        with open(args.build_comic_prompt, encoding="utf-8") as f:
+            sb = json.load(f)
+        panels = sb.get("panels", [])
+        panel_descs = ""
+        for i, p in enumerate(panels):
+            desc = p.get("scene_description", "")
+            emotion_tag = p.get("emotion_tag", "")
+            composition = p.get("panel_composition", "")
+            panel_descs += f"\nPanel {i+1} ({emotion_tag}): {desc} Composition: {composition}."
+        prompt = COMIC_IMAGE_PROMPT_TEMPLATE.format(
+            panel_count=len(panels),
+            theme=sb.get("theme", "Life Comic"),
+            emotional_arc=sb.get("emotional_arc", ""),
+            panel_descriptions=panel_descs,
+        )
+        print(prompt)
+        sys.exit(0)
 
     if args.export_prompts:
         from image_analyzer import COMIC_ANALYSIS_PROMPT
-        from comic_generator import STORYBOARD_PROMPT
+        from comic_generator import STORYBOARD_PROMPT, COMIC_IMAGE_PROMPT_TEMPLATE
         prompts = {
             "analysis_prompt": COMIC_ANALYSIS_PROMPT,
             "storyboard_prompt_template": STORYBOARD_PROMPT,
             "storyboard_variables": ["panels_json", "theme_instruction",
                                       "lang_instruction", "panel_count"],
+            "comic_image_prompt_template": COMIC_IMAGE_PROMPT_TEMPLATE,
+            "comic_image_prompt_variables": ["panel_count", "theme",
+                                              "emotional_arc", "panel_descriptions"],
             "scoring_weights": {"comic_potential": 0.35, "visual_distinctness": 0.30,
                                "narrative_weight": 0.35},
             "tier_thresholds": {"star_moment": 7.5, "good_moment": 6.0, "average": 4.0}
