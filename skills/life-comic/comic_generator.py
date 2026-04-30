@@ -262,6 +262,13 @@ COMIC_IMAGE_PROMPT_TEMPLATE = """Generate a warm, hand-drawn illustration style 
 Overall theme: "{theme}"
 Emotional arc: "{emotional_arc}"
 
+REFERENCE PHOTOS — MUST USE:
+The {panel_count} uploaded photos are your PRIMARY source material. Each photo maps 1-to-1 to a panel:
+Photo 1 → Panel 1, Photo 2 → Panel 2, Photo 3 → Panel 3, etc.
+You MUST base each comic panel on the actual content of its corresponding reference photo.
+Preserve the key subjects (people, buildings, objects), composition, and setting from each photo.
+Transform the photo into comic illustration style — do NOT invent new scenes or substitute different content.
+
 Panel descriptions (arrange according to emotional weight, NOT in a uniform grid):
 {panel_descriptions}
 
@@ -282,6 +289,7 @@ EMOTIONAL PANEL SIZING:
 
 CRITICAL REQUIREMENTS:
 - All {panel_count} panels must be in a SINGLE image with dynamic manga-style layout
+- Each panel MUST depict the scene from its corresponding reference photo in comic style
 - Consistent character appearance across panels (same clothing, hair, build)
 - Warm color palette: golden yellows, soft oranges, gentle greens, twilight purples
 - Hand-drawn line quality with subtle texture
@@ -289,7 +297,7 @@ CRITICAL REQUIREMENTS:
 - Aspect ratio: 3:4 portrait (for the overall page)
 - The overall mood should be warm, nostalgic, and life-affirming
 
-Style anchor: A warm slice-of-life manga page with dynamic irregular paneling and gentle watercolor illustration style, evoking the feeling of a cherished photo album rendered as art."""
+Style anchor: A warm slice-of-life manga page with dynamic irregular paneling and gentle watercolor illustration style, transforming the uploaded reference photos into art."""
 
 
 def generate_comic_image(
