@@ -18,6 +18,7 @@ Workflow:
 """
 
 import argparse
+import glob
 import json
 import os
 import sys
@@ -65,6 +66,27 @@ def moment_to_dict(m: ComicMoment) -> dict:
     }
 
 
+def _normalize_analysis(pre_data, image_dir, all_key="all", selected_key="selected"):
+    """Normalize analysis JSON to expected format, tolerating LLM output variations."""
+    if isinstance(pre_data, list):
+        pre_data = {all_key: pre_data, selected_key: pre_data}
+
+    all_items = pre_data.get(all_key, pre_data.get(selected_key, []))
+    selected_items = pre_data.get(selected_key, all_items)
+
+    image_files = sorted(
+        glob.glob(os.path.join(image_dir, "*.jpg"))
+        + glob.glob(os.path.join(image_dir, "*.jpeg"))
+        + glob.glob(os.path.join(image_dir, "*.png"))
+    )
+    for items in [all_items, selected_items]:
+        for i, item in enumerate(items):
+            if "file" not in item and i < len(image_files):
+                item["file"] = image_files[i]
+
+    return {all_key: all_items, selected_key: selected_items}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Life Comic Generator")
     parser.add_argument("input", help="Image directory or file path")
@@ -97,7 +119,7 @@ def main():
         panels = sb.get("panels", [])
         panel_descs = ""
         for i, p in enumerate(panels):
-            desc = p.get("scene_description", "")
+            desc = p.get("scene_description", "")[:120]
             emotion_tag = p.get("emotion_tag", "")
             composition = p.get("panel_composition", "")
             panel_descs += f"\nPanel {i+1} ({emotion_tag}): {desc} Composition: {composition}."
@@ -165,8 +187,9 @@ def main():
             print(f"\n[2/5] Loading pre-analyzed data from {args.pre_analyzed}...")
             with open(args.pre_analyzed, encoding="utf-8") as f:
                 pre_data = json.load(f)
-            all_moments = pre_data.get("all", pre_data.get("selected", []))
-            selected_dicts = pre_data.get("selected", all_moments)
+            pre_data = _normalize_analysis(pre_data, os.path.dirname(image_paths[0]) if image_paths else ".")
+            all_moments = pre_data["all"]
+            selected_dicts = pre_data["selected"]
             ref_paths = [m["file"] for m in selected_dicts]
             print(f"  Loaded {len(all_moments)} analyses, {len(selected_dicts)} selected")
         else:

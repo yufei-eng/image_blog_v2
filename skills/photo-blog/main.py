@@ -18,6 +18,7 @@ Workflow:
 """
 
 import argparse
+import glob
 import json
 import os
 import sys
@@ -72,6 +73,27 @@ def analysis_to_dict(a: PhotoAnalysis) -> dict:
         "score": a.score.composite,
         "tier": a.score.tier,
     }
+
+
+def _normalize_analysis(pre_data, image_dir, all_key="all", selected_key="highlights"):
+    """Normalize analysis JSON to expected format, tolerating LLM output variations."""
+    if isinstance(pre_data, list):
+        pre_data = {all_key: pre_data, selected_key: pre_data}
+
+    all_items = pre_data.get(all_key, pre_data.get(selected_key, []))
+    selected_items = pre_data.get(selected_key, all_items)
+
+    image_files = sorted(
+        glob.glob(os.path.join(image_dir, "*.jpg"))
+        + glob.glob(os.path.join(image_dir, "*.jpeg"))
+        + glob.glob(os.path.join(image_dir, "*.png"))
+    )
+    for items in [all_items, selected_items]:
+        for i, item in enumerate(items):
+            if "file" not in item and i < len(image_files):
+                item["file"] = image_files[i]
+
+    return {all_key: all_items, selected_key: selected_items}
 
 
 def main():
@@ -169,8 +191,9 @@ def main():
             print(f"\n[2/{total_steps}] Loading pre-analyzed data from {args.pre_analyzed}...")
             with open(args.pre_analyzed, encoding="utf-8") as f:
                 pre_data = json.load(f)
-            all_dicts = pre_data.get("all", pre_data.get("highlights", []))
-            highlight_dicts = pre_data.get("highlights", all_dicts)
+            pre_data = _normalize_analysis(pre_data, os.path.dirname(image_paths[0]) if image_paths else ".")
+            all_dicts = pre_data["all"]
+            highlight_dicts = pre_data["highlights"]
             highlight_paths = [h["file"] for h in highlight_dicts]
             orientation_flags = [h.get("orientation_correct", True) for h in highlight_dicts]
             print(f"  Loaded {len(all_dicts)} analyses, {len(highlight_dicts)} highlights")

@@ -257,47 +257,27 @@ def _enforce_narrative_limits(sb: dict):
 
 # ── Step 2: Generate comic-style multi-panel image ──
 
-COMIC_IMAGE_PROMPT_TEMPLATE = """Generate a warm, hand-drawn illustration style comic page with {panel_count} panels in a DYNAMIC MANGA LAYOUT. The style should be gentle watercolor-meets-digital-illustration, with soft warm tones, slightly rounded character designs, and cozy atmosphere — similar to a "slice of life" manga or children's picture book.
+COMIC_IMAGE_PROMPT_TEMPLATE = """Generate a warm hand-drawn comic page with {panel_count} panels. Style: watercolor-meets-digital, soft warm tones, slice-of-life manga aesthetic.
 
-Overall theme: "{theme}"
-Emotional arc: "{emotional_arc}"
+Theme: "{theme}"
+Arc: "{emotional_arc}"
 
 REFERENCE PHOTOS — MUST USE:
-The {panel_count} uploaded photos are your PRIMARY source material. Each photo maps 1-to-1 to a panel:
-Photo 1 → Panel 1, Photo 2 → Panel 2, Photo 3 → Panel 3, etc.
-You MUST base each comic panel on the actual content of its corresponding reference photo.
-Preserve the key subjects (people, buildings, objects), composition, and setting from each photo.
-Transform the photo into comic illustration style — do NOT invent new scenes or substitute different content.
+The {panel_count} uploaded photos map 1-to-1 to panels (Photo 1 → Panel 1, etc.).
+Each panel MUST depict its corresponding reference photo in comic style. Do NOT invent new scenes.
 
-Panel descriptions (arrange according to emotional weight, NOT in a uniform grid):
+Panels:
 {panel_descriptions}
 
-MANGA PANEL LAYOUT (Japanese comic composition — CRITICAL):
-- VARY panel sizes dramatically — the emotional climax panel should be 2-3x LARGER than other panels
-- Use IRREGULAR, asymmetric arrangements — absolutely NO uniform grids or equal-sized panels
-- Include at least one of: diagonal panel borders, L-shaped panels, or a panel that breaks/overlaps conventional borders
-- Panel borders: thin black lines, but vary their angles — not all perpendicular
-- Leave white gutter space between panels (manga tradition)
-- Mix wide HORIZONTAL panels (landscapes, establishing shots) with tall VERTICAL panels (close-ups, character focus)
-
-EMOTIONAL PANEL SIZING:
-- Quiet/transitional moments → smaller, compact panels
-- Dramatic/emotional peaks → the LARGEST panel, possibly breaking conventional borders
-- Opening → a wider establishing shot panel
-- Climax → hero panel, at least 30% of the page area
-- Create visual rhythm through dramatic size contrast between adjacent panels
-
-CRITICAL REQUIREMENTS:
-- All {panel_count} panels must be in a SINGLE image with dynamic manga-style layout
-- Each panel MUST depict the scene from its corresponding reference photo in comic style
-- Consistent character appearance across panels (same clothing, hair, build)
-- Warm color palette: golden yellows, soft oranges, gentle greens, twilight purples
-- Hand-drawn line quality with subtle texture
-- No text or speech bubbles in the panels
-- Aspect ratio: 3:4 portrait (for the overall page)
-- The overall mood should be warm, nostalgic, and life-affirming
-
-Style anchor: A warm slice-of-life manga page with dynamic irregular paneling and gentle watercolor illustration style, transforming the uploaded reference photos into art."""
+LAYOUT RULES (CRITICAL — follow ALL):
+1. VARY panel sizes: climax → hero panel (≥30% of page, 2-3x larger), quiet moments → compact, opening → wide establishing shot
+2. IRREGULAR asymmetric arrangement — NO uniform grids or equal-sized panels
+3. Use diagonal borders, L-shaped panels, or overlapping borders
+4. Thin black panel borders with varied angles, white gutter space between panels
+5. Mix wide horizontal panels (landscapes) with tall vertical panels (close-ups)
+6. All {panel_count} panels in a SINGLE image, 3:4 portrait aspect ratio
+7. Consistent character appearance across panels (same clothing, hair)
+8. Warm palette (golden yellows, soft oranges, gentle greens), hand-drawn texture, no text/speech bubbles"""
 
 
 def generate_comic_image(
@@ -330,7 +310,7 @@ def generate_comic_image(
 
     panel_descs = ""
     for i, p in enumerate(panels):
-        desc = p.get("scene_description", "")
+        desc = p.get("scene_description", "")[:120]
         emotion_tag = p.get("emotion_tag", "")
         composition = p.get("panel_composition", "")
         panel_descs += f"\nPanel {i+1} ({emotion_tag}): {desc} Composition: {composition}."
