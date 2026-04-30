@@ -123,8 +123,6 @@ In sandbox, Python cannot call MCP tools. You must orchestrate the workflow your
 - **NEVER use `Read` on image files** — Read-based self-analysis is far below Gemini 3 Pro. You MUST use `image_understand`.
 - **NEVER hand-write analysis JSON yourself** — analysis MUST come from `image_understand` (Gemini 3 Pro).
 - **NEVER call `imagen_generate` without `image_urls`** — pass the photo download URLs so the comic reflects real photos.
-- **NEVER write your own comic prompt** — use `--build-comic-prompt` to get the correct prompt with dynamic manga layout instructions.
-- **NEVER shorten or summarize the comic prompt** — the prompt is ~1500-2000 chars by design. Removing ANY bullet (especially MANGA PANEL LAYOUT) degrades the output to a boring uniform grid.
 - **NEVER call `TodoWrite`** — wastes turns.
 - **NEVER run `main.py` without `--pre-analyzed`** — crashes (no MCP_PROXY_TOKEN).
 
@@ -202,9 +200,9 @@ In sandbox, Python cannot call MCP tools. You must orchestrate the workflow your
      ```bash
      python3 <SKILL_DIR>/main.py dummy --build-comic-prompt storyboard.json 2>/dev/null
      ```
-     This outputs the exact prompt to use (~1500-2000 chars). **NEVER write your own comic prompt** — the built-in template contains critical dynamic manga layout instructions (irregular panel sizes, emotional weight-based sizing, diagonal borders, etc.) that you cannot replicate.
+     This outputs the exact prompt to use. **NEVER write your own comic prompt** — the built-in template contains critical dynamic manga layout instructions (irregular panel sizes, emotional weight-based sizing, diagonal borders, etc.) that you cannot replicate.
    - Call `imagen_generate` MCP tool with:
-     - `prompt`: the **COMPLETE, UNMODIFIED** output from the command above. Pass EVERY line, EVERY bullet point. Do NOT shorten, summarize, or rephrase — removing lines (especially MANGA PANEL LAYOUT bullets) will produce a boring uniform grid instead of dynamic manga.
+     - `prompt`: the exact output from the command above
      - `image_urls`: the SAME download URLs from step 1 (REQUIRED — so the comic reflects real photo content)
    - **Download via signed URL** (do NOT `curl` the imagen_generate URL directly — it requires auth and will return a Google OAuth HTML page):
      1. Extract the numeric file ID from the returned URL (e.g. `1312563282387555` from `.../media/file/1312563282387555.png`)
