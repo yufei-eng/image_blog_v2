@@ -265,31 +265,21 @@ Emotional arc: "{emotional_arc}"
 Panel descriptions (arrange according to emotional weight, NOT in a uniform grid):
 {panel_descriptions}
 
-MANGA PANEL LAYOUT (Japanese comic composition — CRITICAL):
-- VARY panel sizes dramatically — the emotional climax panel should be 2-3x LARGER than other panels
-- Use IRREGULAR, asymmetric arrangements — absolutely NO uniform grids or equal-sized panels
-- Include at least one of: diagonal panel borders, L-shaped panels, or a panel that breaks/overlaps conventional borders
-- Panel borders: thin black lines, but vary their angles — not all perpendicular
-- Leave white gutter space between panels (manga tradition)
-- Mix wide HORIZONTAL panels (landscapes, establishing shots) with tall VERTICAL panels (close-ups, character focus)
+MANGA PANEL LAYOUT — THIS ENTIRE SECTION IS NON-NEGOTIABLE:
+- VARY panel sizes dramatically: climax panel = 2-3x LARGER (≥30% of page area), quiet moments = small compact panels
+- IRREGULAR asymmetric arrangements — absolutely NO uniform grids or equal-sized panels
+- Include diagonal panel borders, L-shaped panels, or panels that break/overlap conventional borders
+- Panel borders: thin black lines with VARIED angles — not all perpendicular
+- White gutter space between panels; mix wide HORIZONTAL panels (landscapes) with tall VERTICAL panels (close-ups)
+- Size panels by emotion: opening = wide establishing shot; dramatic peaks = LARGEST panel breaking borders; transitions = smallest
+- Create visual RHYTHM through dramatic size contrast between adjacent panels — this is what makes manga dynamic
 
-EMOTIONAL PANEL SIZING:
-- Quiet/transitional moments → smaller, compact panels
-- Dramatic/emotional peaks → the LARGEST panel, possibly breaking conventional borders
-- Opening → a wider establishing shot panel
-- Climax → hero panel, at least 30% of the page area
-- Create visual rhythm through dramatic size contrast between adjacent panels
-
-CRITICAL REQUIREMENTS:
-- All {panel_count} panels must be in a SINGLE image with dynamic manga-style layout
-- Consistent character appearance across panels (same clothing, hair, build)
+CRITICAL REQUIREMENTS — ALL {panel_count} PANELS IN ONE IMAGE:
+- Dynamic manga-style layout (NOT a grid), consistent character appearance (same clothing, hair, build)
 - Warm color palette: golden yellows, soft oranges, gentle greens, twilight purples
-- Hand-drawn line quality with subtle texture
-- No text or speech bubbles in the panels
-- Aspect ratio: 3:4 portrait (for the overall page)
-- The overall mood should be warm, nostalgic, and life-affirming
-
-Style anchor: A warm slice-of-life manga page with dynamic irregular paneling and gentle watercolor illustration style, evoking the feeling of a cherished photo album rendered as art."""
+- Hand-drawn line quality with subtle texture, no text or speech bubbles
+- Aspect ratio: 3:4 portrait, warm nostalgic life-affirming mood
+- Style: slice-of-life manga page with dynamic irregular paneling and gentle watercolor illustration, like a cherished photo album rendered as art"""
 
 
 def generate_comic_image(

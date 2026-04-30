@@ -122,6 +122,8 @@ In sandbox, Python cannot call MCP tools. You must orchestrate the workflow your
 - **NEVER use `Read` on image files** — Read-based self-analysis is far below Gemini 3 Pro. You MUST use `image_understand`.
 - **NEVER hand-write analysis JSON yourself** — analysis MUST come from `image_understand` (Gemini 3 Pro).
 - **NEVER call `imagen_generate` without `image_urls`** — pass the photo download URLs so the cover is based on real photos.
+- **NEVER write your own cover prompt** — use `--build-cover-prompt` to get the correct prompt with template-matched style.
+- **NEVER shorten or summarize the cover prompt** — the prompt is precisely engineered from a 89-template library. Pass it COMPLETE.
 - **NEVER call `TodoWrite`** — wastes turns.
 - **NEVER run `main.py` without `--pre-analyzed`** — crashes (no MCP_PROXY_TOKEN).
 
@@ -196,7 +198,7 @@ In sandbox, Python cannot call MCP tools. You must orchestrate the workflow your
      ```
      This outputs the exact prompt to use. **NEVER write your own cover prompt** — the template system selects the correct style (photographic, not illustration).
    - Call `imagen_generate` MCP tool with:
-     - `prompt`: the exact output from the command above
+     - `prompt`: the **COMPLETE, UNMODIFIED** output from the command above. Do NOT shorten or summarize — the prompt contains precisely-matched style instructions from a 89-template library.
      - `image_urls`: the SAME download URLs from step 1 (REQUIRED — so the cover reflects real photo content)
    - **Download via signed URL** (do NOT `curl` the imagen_generate URL directly — it requires auth and will return a Google OAuth HTML page):
      1. Extract the numeric file ID from the returned URL (e.g. `1312563282387555` from `.../media/file/1312563282387555.png`)

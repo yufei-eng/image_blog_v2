@@ -68,7 +68,7 @@ In sandbox, Python scripts **cannot** call MCP tools directly. You must orchestr
    - **life-comic image**: `python3 <skill_dir>/skills/life-comic/main.py dummy --build-comic-prompt storyboard.json 2>/dev/null`
    - These commands output the exact prompt text to use with `imagen_generate`. **NEVER compose your own imagen prompt** — the built-in templates contain critical layout/style instructions (dynamic manga panel sizing, photographic cover style, etc.) that you cannot replicate.
 8. **`imagen_generate`** — call ONCE PER SKILL being generated:
-   - `prompt`: the exact output from step 7 (do NOT modify it)
+   - `prompt`: the **COMPLETE, UNMODIFIED** output from step 7. The prompt is ~1500-2000 chars — this is intentional. Pass EVERY line, EVERY bullet point, EVERY parenthetical. Do NOT shorten, summarize, or rephrase ANY part. Removing lines destroys the manga layout instructions and produces boring uniform grids.
    - `image_urls`: the SAME download URLs from step 1 (REQUIRED — without these, the generated image will be generic AI art unrelated to user photos)
    - When running BOTH skills, you MUST call `imagen_generate` TWICE (once for cover, once for comic). Do NOT skip either.
    - **CRITICAL — downloading generated images**: The URLs returned by `imagen_generate` (e.g. `https://test.migoo.ai/beeai/api/v1/media/file/1312563282387555.png`) require authentication and **cannot be downloaded with `curl` directly** (you'll get a Google OAuth HTML page instead of an image). To download:
@@ -85,6 +85,7 @@ In sandbox, Python scripts **cannot** call MCP tools directly. You must orchestr
 - **NEVER hand-write analysis JSON** — analysis MUST come from `image_understand` (Gemini 3 Pro).
 - **NEVER call `imagen_generate` without `image_urls`** — pure text prompts generate AI-imagined images unrelated to user photos. Always pass the photo download URLs.
 - **NEVER write your own imagen prompt** — use `--build-cover-prompt` / `--build-comic-prompt` to get the correct prompt. Hand-written prompts lose critical layout/style instructions (dynamic manga paneling, photographic cover style, etc.).
+- **NEVER shorten or summarize the imagen prompt** — the prompt from `--build-cover-prompt` / `--build-comic-prompt` is precisely engineered. Removing ANY section (especially MANGA PANEL LAYOUT bullets) will degrade output to a boring uniform grid. Pass the COMPLETE output.
 - **NEVER call `TodoWrite`** — it wastes turns. Track progress internally.
 - **NEVER run `main.py` without `--pre-analyzed`** — crashes (no MCP_PROXY_TOKEN).
 
