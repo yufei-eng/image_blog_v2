@@ -75,7 +75,6 @@ In sandbox, Python scripts **cannot** call MCP tools directly. You must orchestr
 - **NEVER use `Read` on image files** — Read-based self-analysis is far below Gemini 3 Pro quality. You MUST use `image_understand` for ALL image analysis.
 - **NEVER hand-write analysis JSON** — analysis MUST come from `image_understand` (Gemini 3 Pro).
 - **NEVER call `imagen_generate` without `image_urls`** — pure text prompts generate AI-imagined images unrelated to user photos. Always pass the photo download URLs.
-- **NEVER use `--skip-cover` for photo-blog** — the AI cover is a core feature. Always generate it via `imagen_generate` and pass `--cover-path`.
 - **NEVER call `TodoWrite`** — it wastes turns. Track progress internally.
 - **NEVER run `main.py` without `--pre-analyzed`** — crashes (no MCP_PROXY_TOKEN).
 

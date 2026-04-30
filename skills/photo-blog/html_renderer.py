@@ -13,6 +13,7 @@ def _img_to_base64(path: str, max_width: int = 800, skip_exif: bool = False) -> 
     Returns (base64_str, mime_type) — e.g. ("iVBOR...", "image/jpeg").
     Handles RGBA (composite on white), RGBa (premultiplied alpha),
     I;16 (16-bit depth), and other PIL modes robustly.
+    Returns ("", "") if the file is not a valid image.
     """
     try:
         from PIL import Image, ImageOps
@@ -30,12 +31,30 @@ def _img_to_base64(path: str, max_width: int = 800, skip_exif: bool = False) -> 
         return base64.b64encode(buf.getvalue()).decode("utf-8"), "image/jpeg"
     except Exception as e:
         print(f"  [WARN] PIL failed for {os.path.basename(path)}: {e}")
+        with open(path, "rb") as f:
+            header = f.read(16)
+        if not _is_image_bytes(header):
+            print(f"  [ERROR] {os.path.basename(path)} is not a valid image (got HTML or other non-image content)")
+            return "", ""
         ext = os.path.splitext(path)[1].lower().lstrip(".")
         mime_map = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
                     "webp": "image/webp", "gif": "image/gif"}
         mime = mime_map.get(ext, "image/png")
         with open(path, "rb") as f:
             return base64.b64encode(f.read()).decode("utf-8"), mime
+
+
+def _is_image_bytes(header: bytes) -> bool:
+    """Check if file header bytes look like a known image format."""
+    if header[:8] == b'\x89PNG\r\n\x1a\n':
+        return True
+    if header[:2] == b'\xff\xd8':
+        return True
+    if header[:4] == b'RIFF' and header[8:12] == b'WEBP':
+        return True
+    if header[:6] in (b'GIF87a', b'GIF89a'):
+        return True
+    return False
 
 
 def _safe_convert_rgb(img):
