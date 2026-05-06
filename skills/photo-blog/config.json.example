@@ -5,5 +5,13 @@
     "client_token": "YOUR_TOKEN_HERE",
     "understanding_model": "gemini-3-pro-preview",
     "generation_model": "gemini-3.1-flash-image-preview"
+  },
+  "mcp_server": {
+    "url": "http://localhost:8080/sse",
+    "timeout": 300
+  },
+  "file_upload": {
+    "url": "http://beeai.test.shopee.io/inbeeai/api/v1/media/upload",
+    "timeout": 60
   }
 }

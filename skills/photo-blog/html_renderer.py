@@ -7,32 +7,130 @@ import os
 from typing import Dict, List, Optional
 
 
-def _img_to_base64(path: str, max_width: int = 800, skip_exif: bool = False) -> str:
-    """Convert image to base64 with optional EXIF orientation fix and resize."""
+def _img_to_base64(path: str, max_width: int = 800, skip_exif: bool = False) -> tuple[str, str]:
+    """Convert image to base64 data URI components.
+
+    Returns (base64_str, mime_type) — e.g. ("iVBOR...", "image/jpeg").
+    Handles RGBA (composite on white), RGBa (premultiplied alpha),
+    I;16 (16-bit depth), and other PIL modes robustly.
+    Returns ("", "") if the file is not a valid image.
+    """
     try:
         from PIL import Image, ImageOps
         import io
         img = Image.open(path)
         if not skip_exif:
             img = ImageOps.exif_transpose(img)
-        if img.mode in ("RGBA", "P", "LA"):
-            img = img.convert("RGB")
+        img = _safe_convert_rgb(img)
         w, h = img.size
         if w > max_width:
             ratio = max_width / w
             img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=85)
-        return base64.b64encode(buf.getvalue()).decode("utf-8")
-    except Exception:
+        return base64.b64encode(buf.getvalue()).decode("utf-8"), "image/jpeg"
+    except Exception as e:
+        print(f"  [WARN] PIL failed for {os.path.basename(path)}: {e}")
         with open(path, "rb") as f:
-            return base64.b64encode(f.read()).decode("utf-8")
+            header = f.read(16)
+        if not _is_image_bytes(header):
+            print(f"  [ERROR] {os.path.basename(path)} is not a valid image (got HTML or other non-image content)")
+            return "", ""
+        ext = os.path.splitext(path)[1].lower().lstrip(".")
+        mime_map = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+                    "webp": "image/webp", "gif": "image/gif"}
+        mime = mime_map.get(ext, "image/png")
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8"), mime
+
+
+def _is_image_bytes(header: bytes) -> bool:
+    """Check if file header bytes look like a known image format."""
+    if header[:8] == b'\x89PNG\r\n\x1a\n':
+        return True
+    if header[:2] == b'\xff\xd8':
+        return True
+    if header[:4] == b'RIFF' and header[8:12] == b'WEBP':
+        return True
+    if header[:6] in (b'GIF87a', b'GIF89a'):
+        return True
+    return False
+
+
+def _safe_convert_rgb(img):
+    """Convert any PIL image mode to RGB safely.
+
+    - RGBA/LA/PA: composite onto white background (avoids black transparency)
+    - RGBa (premultiplied alpha): convert to RGBA first, then composite
+    - I;16 variants: shift down to 8-bit before converting
+    - Other modes: direct convert("RGB")
+    """
+    from PIL import Image
+
+    mode = img.mode
+
+    if mode == "RGB":
+        return img
+
+    if mode == "RGBa":
+        img = img.convert("RGBA")
+        mode = "RGBA"
+
+    if mode in ("RGBA", "LA", "PA"):
+        bg = Image.new("RGB", img.size, (255, 255, 255))
+        if mode != "RGBA":
+            img = img.convert("RGBA")
+        bg.paste(img, mask=img.split()[3])
+        return bg
+
+    if mode.startswith("I;16") or mode in ("I", "F"):
+        return img.convert("L").convert("RGB")
+
+    return img.convert("RGB")
 
 
 _LABELS = {
     "en": {"insights": "Insights", "tips": "Tips", "brand": "Fleeting Thoughts", "default_title": "Today's Glimpse"},
     "zh": {"insights": "\u7075\u611f", "tips": "\u5c0f\u63d0\u9192", "brand": "\u6d6e\u5149\u63a0\u5f71", "default_title": "\u4eca\u65e5\u4e00\u7a25"},
 }
+
+
+def _normalize_blog(d: dict) -> dict:
+    """Normalize alternative field names from LLM output to canonical format."""
+    if "description" not in d:
+        for alt in ("subtitle", "summary", "desc"):
+            if alt in d:
+                d["description"] = {"text": d[alt]}
+                break
+    elif isinstance(d.get("description"), str):
+        d["description"] = {"text": d["description"]}
+    if "hero_image_index" not in d:
+        for alt in ("hero_index", "heroIndex", "cover_index"):
+            if alt in d:
+                d["hero_image_index"] = d[alt]
+                break
+    for ins in d.get("insights", []):
+        if "text" not in ins:
+            for alt in ("caption", "body", "description"):
+                if alt in ins:
+                    ins["text"] = ins[alt]
+                    break
+        if "image_index" not in ins:
+            for alt in ("photo_index", "photoIndex", "img_index"):
+                if alt in ins:
+                    ins["image_index"] = ins[alt]
+                    break
+    if "tip" not in d:
+        for alt in ("closing", "tips", "advice"):
+            if alt in d:
+                d["tip"] = d[alt]
+                break
+    if "footer_date" not in d:
+        for alt in ("date_line", "date", "dateLine"):
+            if alt in d:
+                d["footer_date"] = d[alt]
+                break
+    return d
 
 
 def render_blog_html(
@@ -55,6 +153,7 @@ def render_blog_html(
     Returns:
         Absolute path to the generated HTML file
     """
+    blog_content = _normalize_blog(blog_content)
     lang = blog_content.get("_lang", "en")
     L = _LABELS.get(lang, _LABELS["en"])
     title = blog_content.get("title", L["default_title"])
@@ -65,26 +164,26 @@ def render_blog_html(
     tip = blog_content.get("tip", "")
     footer_date = blog_content.get("footer_date", "")
 
-    hero_b64 = ""
+    hero_b64, hero_mime = "", "image/jpeg"
     if cover_path and os.path.exists(cover_path):
-        hero_b64 = _img_to_base64(cover_path, max_width=1200)
+        hero_b64, hero_mime = _img_to_base64(cover_path, max_width=1200)
     elif highlight_paths and hero_idx < len(highlight_paths):
         skip = orientation_flags and hero_idx < len(orientation_flags) and not orientation_flags[hero_idx]
-        hero_b64 = _img_to_base64(highlight_paths[hero_idx], max_width=1000, skip_exif=skip)
+        hero_b64, hero_mime = _img_to_base64(highlight_paths[hero_idx], max_width=1000, skip_exif=skip)
 
     insight_blocks = []
     for ins in insights:
         idx = ins.get("image_index", 0)
         text = ins.get("text", "")
-        img_b64 = ""
+        img_b64, img_mime = "", "image/jpeg"
         if idx < len(highlight_paths):
             skip = orientation_flags and idx < len(orientation_flags) and not orientation_flags[idx]
-            img_b64 = _img_to_base64(highlight_paths[idx], max_width=600, skip_exif=skip)
-        insight_blocks.append({"text": text, "img_b64": img_b64})
+            img_b64, img_mime = _img_to_base64(highlight_paths[idx], max_width=600, skip_exif=skip)
+        insight_blocks.append({"text": text, "img_b64": img_b64, "img_mime": img_mime})
 
     insights_html = ""
     for i, block in enumerate(insight_blocks):
-        img_tag = f'<img src="data:image/jpeg;base64,{block["img_b64"]}" alt="insight-{i}" class="insight-img" loading="lazy">' if block["img_b64"] else ""
+        img_tag = f'<img src="data:{block["img_mime"]};base64,{block["img_b64"]}" alt="insight-{i}" class="insight-img" loading="lazy">' if block["img_b64"] else ""
         insights_html += f"""
         <div class="insight-card">
             <div class="insight-image">{img_tag}</div>
@@ -222,7 +321,7 @@ h1 {{
 
 <div class="page">
     <div class="hero-section">
-        {"<img src='data:image/jpeg;base64," + hero_b64 + "' alt='hero' class='hero-img'>" if hero_b64 else ""}
+        {"<img src='data:" + hero_mime + ";base64," + hero_b64 + "' alt='hero' class='hero-img'>" if hero_b64 else ""}
         <div class="hero-overlay">
             <h1>{title}</h1>
         </div>

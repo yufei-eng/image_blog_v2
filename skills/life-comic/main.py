@@ -5,22 +5,32 @@ Usage:
     python3 main.py <image_dir_or_files> [--panels 8] [--output comic.html] [--date 2026-04-13]
         [--theme "food journey"] [--format html]
 
+    Sandbox mode (pre-analyzed data from Claude Code):
+    python3 main.py <image_dir> --pre-analyzed analysis.json --storyboard storyboard.json
+        [--comic-images-dir ./comic_imgs] [--output comic.html] [--format all]
+
 Workflow:
-    1. Batch analyze photos via Gemini 3 Pro (identify comic-worthy moments)
+    1. Batch analyze photos via MCP image_understand (or load from --pre-analyzed)
     2. Select top moments with narrative diversity
-    3. Generate storyboard script and emotional narrative
-    4. Generate multi-panel comic image via Gemini 3.1 Flash Image
+    3. Generate storyboard script and emotional narrative via MCP (or load from --storyboard)
+    4. Generate multi-panel comic image via MCP imagen_generate (or use --comic-images-dir)
     5. Render to selected format (HTML / rich text / PNG / all)
 """
 
 import argparse
+import glob
 import json
 import os
 import sys
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SHARED_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), "shared")
 sys.path.insert(0, SCRIPT_DIR)
+if SHARED_DIR not in sys.path:
+    sys.path.insert(0, SHARED_DIR)
 
+from mcp_client import create_mcp_client
+from file_uploader import FileUploader
 from image_analyzer import analyze_photos, select_comic_panels, ComicMoment, extract_photo_date
 from comic_generator import generate_storyboard, generate_comic_image
 from html_renderer import render_comic_html
@@ -56,6 +66,53 @@ def moment_to_dict(m: ComicMoment) -> dict:
     }
 
 
+def _normalize_analysis(pre_data, image_dir, all_key="all", selected_key="selected"):
+    """Normalize analysis JSON to expected format, tolerating LLM output variations."""
+    if isinstance(pre_data, list):
+        pre_data = {all_key: pre_data, selected_key: pre_data}
+
+    all_items = pre_data.get(all_key, pre_data.get(selected_key, []))
+    selected_items = pre_data.get(selected_key, all_items)
+
+    image_files = sorted(
+        glob.glob(os.path.join(image_dir, "*.jpg"))
+        + glob.glob(os.path.join(image_dir, "*.jpeg"))
+        + glob.glob(os.path.join(image_dir, "*.png"))
+    )
+    for items in [all_items, selected_items]:
+        for i, item in enumerate(items):
+            if "file" not in item and i < len(image_files):
+                item["file"] = image_files[i]
+
+    return {all_key: all_items, selected_key: selected_items}
+
+
+def _load_image_urls(arg: str) -> list[str]:
+    """Load image URLs from a JSON file or inline JSON string."""
+    if os.path.isfile(arg):
+        with open(arg, encoding="utf-8") as f:
+            return json.load(f)
+    return json.loads(arg)
+
+
+def _build_comic_prompt_from_storyboard(sb: dict) -> str:
+    """Build the imagen_generate prompt from a storyboard dict."""
+    from comic_generator import COMIC_IMAGE_PROMPT_TEMPLATE
+    panels = sb.get("panels", [])
+    panel_descs = ""
+    for i, p in enumerate(panels):
+        desc = p.get("scene_description", "")[:120]
+        emotion_tag = p.get("emotion_tag", "")
+        composition = p.get("panel_composition", "")
+        panel_descs += f"\nPanel {i+1} ({emotion_tag}): {desc} Composition: {composition}."
+    return COMIC_IMAGE_PROMPT_TEMPLATE.format(
+        panel_count=len(panels),
+        theme=sb.get("theme", "Life Comic"),
+        emotional_arc=sb.get("emotional_arc", ""),
+        panel_descriptions=panel_descs,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description="Life Comic Generator")
     parser.add_argument("input", help="Image directory or file path")
@@ -69,13 +126,81 @@ def main():
     parser.add_argument("--style", default=None, help="Style keyword (alias for --theme)")
     parser.add_argument("--format", default="all", choices=["html", "richtext", "png", "all"],
                         help="Output format: html, richtext (markdown for chat), png, all (default)")
+    parser.add_argument("--pre-analyzed", default=None,
+                        help="Pre-analyzed JSON file (skip MCP image analysis)")
+    parser.add_argument("--storyboard", default=None,
+                        help="Pre-generated storyboard JSON (skip MCP storyboard generation)")
+    parser.add_argument("--comic-images-dir", default=None,
+                        help="Directory with pre-generated comic images (skip MCP image generation)")
+    parser.add_argument("--export-prompts", action="store_true",
+                        help="Export prompt templates as JSON and exit (for sandbox mode)")
+    parser.add_argument("--build-comic-prompt", default=None,
+                        help="Build imagen prompt from storyboard JSON and exit (for sandbox mode)")
+    parser.add_argument("--emit-analyze-call", action="store_true",
+                        help="Output complete image_understand MCP tool call JSON and exit")
+    parser.add_argument("--emit-imagen-call", default=None,
+                        help="Build complete imagen_generate call from storyboard JSON and exit")
+    parser.add_argument("--image-urls", default=None,
+                        help="JSON array of image download URLs (file path or inline JSON)")
     args = parser.parse_args()
+
+    if args.emit_analyze_call:
+        from image_analyzer import COMIC_ANALYSIS_PROMPT
+        urls = _load_image_urls(args.image_urls) if args.image_urls else []
+        call = {
+            "tool_name": "image_understand",
+            "arguments": {
+                "prompt": COMIC_ANALYSIS_PROMPT,
+                "image_urls": urls or ["<REPLACE_WITH_DOWNLOAD_URL_1>", "<REPLACE_WITH_DOWNLOAD_URL_2>"],
+            }
+        }
+        print(json.dumps(call, ensure_ascii=False, indent=2))
+        sys.exit(0)
+
+    if args.emit_imagen_call:
+        with open(args.emit_imagen_call, encoding="utf-8") as f:
+            sb = json.load(f)
+        prompt = _build_comic_prompt_from_storyboard(sb)
+        urls = _load_image_urls(args.image_urls) if args.image_urls else []
+        call = {
+            "tool_name": "imagen_generate",
+            "arguments": {
+                "prompt": prompt,
+                "image_urls": urls or ["<REPLACE_WITH_DOWNLOAD_URL_1>", "<REPLACE_WITH_DOWNLOAD_URL_2>"],
+            }
+        }
+        print(json.dumps(call, ensure_ascii=False, indent=2))
+        sys.exit(0)
+
+    if args.build_comic_prompt:
+        with open(args.build_comic_prompt, encoding="utf-8") as f:
+            sb = json.load(f)
+        print(_build_comic_prompt_from_storyboard(sb))
+        sys.exit(0)
+
+    if args.export_prompts:
+        from image_analyzer import COMIC_ANALYSIS_PROMPT
+        from comic_generator import STORYBOARD_PROMPT, COMIC_IMAGE_PROMPT_TEMPLATE
+        prompts = {
+            "analysis_prompt": COMIC_ANALYSIS_PROMPT,
+            "storyboard_prompt_template": STORYBOARD_PROMPT,
+            "storyboard_variables": ["panels_json", "theme_instruction",
+                                      "lang_instruction", "panel_count"],
+            "comic_image_prompt_template": COMIC_IMAGE_PROMPT_TEMPLATE,
+            "comic_image_prompt_variables": ["panel_count", "theme",
+                                              "emotional_arc", "panel_descriptions"],
+            "scoring_weights": {"comic_potential": 0.35, "visual_distinctness": 0.30,
+                               "narrative_weight": 0.35},
+            "tier_thresholds": {"star_moment": 7.5, "good_moment": 6.0, "average": 4.0}
+        }
+        print(json.dumps(prompts, ensure_ascii=False, indent=2))
+        sys.exit(0)
 
     user_theme = args.theme or args.style
     panel_count = min(max(args.panels, 1), 10)
 
     print("=" * 60)
-    print("  LIFE COMIC GENERATOR v0.2")
+    print("  LIFE COMIC GENERATOR v0.3")
     print("=" * 60)
 
     image_paths = collect_images(args.input)
@@ -84,121 +209,173 @@ def main():
         sys.exit(1)
     print(f"\n[1/5] Found {len(image_paths)} images")
 
-    print(f"\n[2/5] Analyzing photos for comic moments (Gemini 3 Pro)...")
-    moments = analyze_photos(image_paths)
-    print(f"  Analyzed {len(moments)} photos")
+    skip_image_gen = args.skip_image_gen or args.comic_images_dir is not None
+    needs_mcp = not args.pre_analyzed or not args.storyboard or (not skip_image_gen and not args.comic_images_dir)
 
-    effective_panels = min(panel_count, len(moments))
-    print(f"\n[3/5] Selecting top {effective_panels} comic panels...")
-    selected = select_comic_panels(moments, effective_panels)
-    print(f"  Selected {len(selected)} panels:")
-    for i, m in enumerate(selected):
-        print(f"    #{i+1} [{m.tier}] {m.composite_score:.1f} — {m.scene_summary}")
+    cfg = {}
+    config_path = os.path.join(SCRIPT_DIR, "config.json")
+    alt_path = os.path.expanduser("~/.claude/skills/life-comic/config.json")
+    for p in [config_path, alt_path]:
+        if os.path.exists(p):
+            with open(p) as f:
+                cfg = json.load(f)
+            break
 
-    selected_dicts = [moment_to_dict(m) for m in selected]
+    mcp = None
+    uploader = None
+    if needs_mcp:
+        mcp = create_mcp_client(cfg)
+        mcp.connect()
+        uploader = FileUploader(cfg)
 
-    if args.save_analysis:
-        all_dicts = [moment_to_dict(m) for m in moments]
-        with open(args.save_analysis, "w", encoding="utf-8") as f:
-            json.dump({"all": all_dicts, "selected": selected_dicts}, f, ensure_ascii=False, indent=2)
-        print(f"  Analysis saved to {args.save_analysis}")
-
-    date_str = args.date
-    if not date_str:
-        for p in image_paths:
-            date_str = extract_photo_date(p)
-            if date_str:
-                break
-
-    def _detect_lang(text):
-        if not text:
-            return "en"
-        cjk = sum(1 for c in text if '\u4e00' <= c <= '\u9fff' or '\u3400' <= c <= '\u4dbf')
-        return "zh" if cjk / max(len(text.replace(" ", "")), 1) > 0.15 else "en"
-
-    lang = _detect_lang(user_theme)
-    if user_theme:
-        print(f"\n  Theme: '{user_theme}' (lang={lang})")
-
-    print(f"\n[4/5] Generating storyboard and narrative...")
-    storyboard = generate_storyboard(selected_dicts, date_str=date_str, user_theme=user_theme, lang=lang, target_panel_count=effective_panels)
-    print(f"  Theme: {storyboard.get('theme', '?')}")
-    print(f"  Title: {storyboard.get('narrative', {}).get('title', '?')}")
-    print(f"  Panels: {len(storyboard.get('panels', []))}")
-    actual_panels = len(storyboard.get("panels", []))
-    if actual_panels < effective_panels:
-        print(f"  [WARN] Storyboard returned {actual_panels} panels, expected {effective_panels}")
-
-    suggested = storyboard.get("suggested_themes", [])
-    if suggested:
-        print(f"  Suggested themes: {', '.join(suggested)}")
-
-    comic_image_path = None
-    if not args.skip_image_gen:
-        print(f"\n[5/5] Generating comic image (Gemini 3.1 Flash Image)...")
-        os.makedirs(args.output_dir, exist_ok=True)
-        ref_paths = [m.file_path for m in selected]
-        comic_image_path = generate_comic_image(storyboard, ref_paths, args.output_dir)
-        if comic_image_path:
-            print(f"  Comic image: {comic_image_path}")
+    try:
+        if args.pre_analyzed:
+            print(f"\n[2/5] Loading pre-analyzed data from {args.pre_analyzed}...")
+            with open(args.pre_analyzed, encoding="utf-8") as f:
+                pre_data = json.load(f)
+            pre_data = _normalize_analysis(pre_data, os.path.dirname(image_paths[0]) if image_paths else ".")
+            all_moments = pre_data["all"]
+            selected_dicts = pre_data["selected"]
+            ref_paths = [m["file"] for m in selected_dicts]
+            print(f"  Loaded {len(all_moments)} analyses, {len(selected_dicts)} selected")
         else:
-            print(f"  [WARN] Comic image generation failed, using photo fallback")
-    else:
-        print(f"\n[5/5] Skipping comic image generation (--skip-image-gen)")
+            print(f"\n[2/5] Analyzing photos for comic moments via MCP...")
+            moments = analyze_photos(image_paths, mcp_client=mcp, uploader=uploader)
+            print(f"  Analyzed {len(moments)} photos")
 
-    ref_paths = [m.file_path for m in selected]
-    output_base = os.path.splitext(args.output)[0]
+            effective_panels = min(panel_count, len(moments))
+            print(f"\n[3/5] Selecting top {effective_panels} comic panels...")
+            selected = select_comic_panels(moments, effective_panels)
+            print(f"  Selected {len(selected)} panels:")
+            for i, m in enumerate(selected):
+                print(f"    #{i+1} [{m.tier}] {m.composite_score:.1f} — {m.scene_summary}")
 
-    generated_files = {}
-    html_output = None
+            selected_dicts = [moment_to_dict(m) for m in selected]
+            ref_paths = [m.file_path for m in selected]
 
-    if args.format in ("html", "all"):
-        html_output = render_comic_html(storyboard, comic_image_path, ref_paths, args.output)
-        generated_files["html"] = html_output
-        print(f"\n  [HTML] {html_output}")
+            if args.save_analysis:
+                all_dicts = [moment_to_dict(m) for m in moments]
+                with open(args.save_analysis, "w", encoding="utf-8") as f:
+                    json.dump({"all": all_dicts, "selected": selected_dicts}, f, ensure_ascii=False, indent=2)
+                print(f"  Analysis saved to {args.save_analysis}")
 
-    if args.format in ("richtext", "all"):
-        from richtext_renderer import render_comic_richtext
-        rt_path = output_base + "_richtext.md"
-        render_comic_richtext(storyboard, comic_image_path, ref_paths, rt_path)
-        generated_files["richtext"] = rt_path
-        print(f"  [Rich Text] {rt_path}")
+        date_str = args.date
+        if not date_str:
+            for p in image_paths:
+                date_str = extract_photo_date(p)
+                if date_str:
+                    break
 
-    if args.format in ("png", "all"):
-        from png_renderer import render_comic_png
-        png_path = output_base + ".png"
-        if not html_output:
-            html_output = render_comic_html(storyboard, comic_image_path, ref_paths, output_base + "_tmp.html")
-        result = render_comic_png(storyboard, comic_image_path, ref_paths, png_path, html_path=html_output)
-        if result:
-            generated_files["png"] = png_path
-            print(f"  [PNG] {png_path}")
+        def _detect_lang(text):
+            if not text:
+                return "en"
+            cjk = sum(1 for c in text if '一' <= c <= '鿿' or '㐀' <= c <= '䶿')
+            return "zh" if cjk / max(len(text.replace(" ", "")), 1) > 0.15 else "en"
 
-    print(f"\n{'=' * 60}")
-    print(f"  Comic generated (v0.2)")
-    for fmt, path in generated_files.items():
-        print(f"  [{fmt.upper()}] {path}")
-    if comic_image_path:
-        print(f"\n  >>> COMIC IMAGE: {comic_image_path}")
-    if "png" in generated_files:
-        print(f"  >>> COMPOSITE IMAGE (shareable): {generated_files['png']}")
-    if "richtext" in generated_files:
-        print(f"  >>> RICH TEXT (for chat): {generated_files['richtext']}")
-    print(f"{'=' * 60}")
+        lang = _detect_lang(user_theme)
+        if user_theme:
+            print(f"\n  Theme: '{user_theme}' (lang={lang})")
 
-    _html_label = ("HTML \u7248\u672c\uff08\u4f9b\u5185\u90e8\u6d4b\u8bd5\uff09"
-                   if lang == "zh" else "HTML version (for internal testing)")
-    print(f"\n>>> UPLOAD INSTRUCTIONS (follow exactly):")
-    if "png" in generated_files:
-        print(f"  Upload {generated_files['png']}")
-        print(f'  Link text: "\U0001f4f7 [PNG download](<url>)"')
-    if "html" in generated_files:
-        print(f"  Upload {generated_files['html']}")
-        print(f'  Link text: "\U0001f4c4 [{_html_label}](<url>)"')
-    if comic_image_path:
-        print(f"  Upload {comic_image_path}")
-        print(f'  Link text: "\U0001f3a8 [Comic art](<url>)"')
-    print(f"  Do NOT embed images inline with ![...]. Provide download links only.")
+        if args.storyboard:
+            print(f"\n[4/5] Loading storyboard from {args.storyboard}...")
+            with open(args.storyboard, encoding="utf-8") as f:
+                storyboard = json.load(f)
+            print(f"  Title: {storyboard.get('narrative', {}).get('title', '?')}")
+        else:
+            effective_panels = len(selected_dicts)
+            print(f"\n[4/5] Generating storyboard and narrative...")
+            storyboard = generate_storyboard(selected_dicts, date_str=date_str, user_theme=user_theme, lang=lang, target_panel_count=effective_panels, mcp_client=mcp, uploader=uploader, panel_photo_paths=ref_paths)
+            print(f"  Theme: {storyboard.get('theme', '?')}")
+            print(f"  Title: {storyboard.get('narrative', {}).get('title', '?')}")
+            print(f"  Panels: {len(storyboard.get('panels', []))}")
+            actual_panels = len(storyboard.get("panels", []))
+            if actual_panels < effective_panels:
+                print(f"  [WARN] Storyboard returned {actual_panels} panels, expected {effective_panels}")
+
+        suggested = storyboard.get("suggested_themes", [])
+        if suggested:
+            print(f"  Suggested themes: {', '.join(suggested)}")
+
+        comic_image_path = None
+        if args.comic_images_dir:
+            imgs = sorted([
+                os.path.join(args.comic_images_dir, f)
+                for f in os.listdir(args.comic_images_dir)
+                if os.path.splitext(f)[1].lower() in IMAGE_EXTS
+            ])
+            if imgs:
+                comic_image_path = imgs[0]
+                print(f"\n[5/5] Using pre-generated comic image: {comic_image_path}")
+            else:
+                print(f"\n[5/5] No comic images found in {args.comic_images_dir}")
+        elif not skip_image_gen:
+            print(f"\n[5/5] Generating comic image via MCP imagen_generate...")
+            os.makedirs(args.output_dir, exist_ok=True)
+            comic_image_path = generate_comic_image(storyboard, ref_paths, args.output_dir, mcp_client=mcp, uploader=uploader)
+            if comic_image_path:
+                print(f"  Comic image: {comic_image_path}")
+            else:
+                print(f"  [WARN] Comic image generation failed, using photo fallback")
+        else:
+            print(f"\n[5/5] Skipping comic image generation (--skip-image-gen)")
+
+        output_base = os.path.splitext(args.output)[0]
+
+        generated_files = {}
+        html_output = None
+
+        if args.format in ("html", "all"):
+            html_output = render_comic_html(storyboard, comic_image_path, ref_paths, args.output)
+            generated_files["html"] = html_output
+            print(f"\n  [HTML] {html_output}")
+
+        if args.format in ("richtext", "all"):
+            from richtext_renderer import render_comic_richtext
+            rt_path = output_base + "_richtext.md"
+            render_comic_richtext(storyboard, comic_image_path, ref_paths, rt_path)
+            generated_files["richtext"] = rt_path
+            print(f"  [Rich Text] {rt_path}")
+
+        if args.format in ("png", "all"):
+            from png_renderer import render_comic_png
+            png_path = output_base + ".png"
+            if not html_output:
+                html_output = render_comic_html(storyboard, comic_image_path, ref_paths, output_base + "_tmp.html")
+            result = render_comic_png(storyboard, comic_image_path, ref_paths, png_path, html_path=html_output)
+            if result:
+                generated_files["png"] = png_path
+                print(f"  [PNG] {png_path}")
+
+        print(f"\n{'=' * 60}")
+        print(f"  Comic generated (v0.3)")
+        for fmt, path in generated_files.items():
+            print(f"  [{fmt.upper()}] {path}")
+        if comic_image_path:
+            print(f"\n  >>> COMIC IMAGE: {comic_image_path}")
+        if "png" in generated_files:
+            print(f"  >>> COMPOSITE IMAGE (shareable): {generated_files['png']}")
+        if "richtext" in generated_files:
+            print(f"  >>> RICH TEXT (for chat): {generated_files['richtext']}")
+        print(f"{'=' * 60}")
+
+        _html_label = ("HTML 版本（供内部测试）"
+                       if lang == "zh" else "HTML version (for internal testing)")
+        print(f"\n>>> UPLOAD INSTRUCTIONS (follow exactly):")
+        if "png" in generated_files:
+            print(f"  Upload {generated_files['png']}")
+            print(f'  Link text: "\U0001f4f7 [PNG download](<url>)"')
+        if "html" in generated_files:
+            print(f"  Upload {generated_files['html']}")
+            print(f'  Link text: "\U0001f4c4 [{_html_label}](<url>)"')
+        if comic_image_path:
+            print(f"  Upload {comic_image_path}")
+            print(f'  Link text: "\U0001f3a8 [Comic art](<url>)"')
+        print(f"  Do NOT embed images inline with ![...]. Provide download links only.")
+    finally:
+        if mcp:
+            mcp.close()
+        if uploader:
+            uploader.close()
 
 
 if __name__ == "__main__":

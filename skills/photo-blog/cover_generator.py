@@ -23,10 +23,15 @@ import time
 import uuid
 from typing import List, Optional, Tuple
 
-from google import genai
-from google.genai import types
-
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SHARED_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), "shared")
+if SHARED_DIR not in sys.path:
+    sys.path.insert(0, SHARED_DIR)
+
+from mcp_client import MCPClient, extract_text_content
+from file_uploader import FileUploader
+from image_downloader import extract_image_urls, download_image
+
 TEMPLATE_LIB_PATH = os.path.join(SCRIPT_DIR, "template_library.json")
 
 _RECENT_STYLES: list[str] = []
@@ -39,21 +44,6 @@ def _load_config() -> dict:
         with open(config_path) as f:
             return json.load(f)
     return {}
-
-
-def _get_client(cfg: dict):
-    api_cfg = cfg.get("compass_api", {})
-    token = (os.environ.get("COMPASS_CLIENT_TOKEN")
-             or os.environ.get("COMPASS_API_KEY")
-             or os.environ.get("ANTHROPIC_API_KEY")
-             or os.environ.get("GOOGLE_API_KEY")
-             or os.environ.get("GEMINI_API_KEY")
-             or api_cfg.get("client_token", ""))
-    base_url = (os.environ.get("COMPASS_BASE_URL")
-                or os.environ.get("ANTHROPIC_BASE_URL")
-                or api_cfg.get("base_url", ""))
-    http_opts = types.HttpOptions(base_url=base_url) if base_url else None
-    return genai.Client(api_key=token, http_options=http_opts)
 
 
 def _load_image_bytes(path: str, max_pixels: int = 800 * 800) -> Tuple[bytes, str]:
@@ -310,6 +300,8 @@ def generate_cover_image(
     output_dir: str = ".",
     ref_images_dir: str = "",
     lang: str = "en",
+    mcp_client: Optional[MCPClient] = None,
+    uploader: Optional[FileUploader] = None,
 ) -> Optional[str]:
     """Generate a diverse, template-driven cover image for the blog.
 
@@ -319,13 +311,23 @@ def generate_cover_image(
         output_dir: Where to save the generated cover
         ref_images_dir: Directory containing reference template images
         lang: Language for cover text ('en' or 'zh')
+        mcp_client: Optional shared MCP client
+        uploader: Optional shared FileUploader
 
     Returns:
         Path to generated cover PNG, or None if generation failed.
     """
+    from mcp_client import create_mcp_client
+
     cfg = _load_config()
-    client = _get_client(cfg)
-    gen_model = cfg.get("compass_api", {}).get("generation_model", "gemini-3.1-flash-image-preview")
+    own_mcp = mcp_client is None
+    own_uploader = uploader is None
+
+    if own_mcp:
+        mcp_client = create_mcp_client(cfg)
+        mcp_client.connect()
+    if own_uploader:
+        uploader = FileUploader(cfg)
 
     templates = _load_template_library()
     ctx = _extract_cover_context(blog_content)
@@ -352,71 +354,69 @@ def generate_cover_image(
 
     ref_count = min(len(highlight_paths), 5)
 
-    parts: list[types.Part] = []
+    image_urls = []
 
     if template_path and os.path.exists(template_path):
         try:
             tpl_data, tpl_mime = _load_image_bytes(template_path, max_pixels=1000 * 1000)
-            parts.append(types.Part.from_bytes(data=tpl_data, mime_type=tpl_mime))
+            tpl_url = uploader.upload_bytes(tpl_data, "template.jpg", tpl_mime)
+            image_urls.append(tpl_url)
         except Exception as e:
-            print(f"  [WARN] Failed to load template image: {e}")
+            print(f"  [WARN] Failed to upload template image: {e}")
 
     for rp in highlight_paths[:ref_count]:
         try:
             img_data, mime = _load_image_bytes(rp)
-            parts.append(types.Part.from_bytes(data=img_data, mime_type=mime))
+            filename = os.path.basename(rp).rsplit(".", 1)[0] + ".jpg"
+            url = uploader.upload_bytes(img_data, filename, mime)
+            image_urls.append(url)
         except Exception as e:
-            print(f"  [WARN] Failed to load photo {rp}: {e}")
-
-    parts.append(types.Part.from_text(text=prompt))
+            print(f"  [WARN] Failed to upload photo {rp}: {e}")
 
     tpl_label = "1 template + " if template_path else ""
-    print(f"  Generating cover with {tpl_label}{ref_count} photos via {gen_model}...")
+    print(f"  Generating cover with {tpl_label}{ref_count} photos via imagen_generate...")
 
     max_retries = 2
-    for attempt in range(max_retries + 1):
-        try:
-            response = client.models.generate_content(
-                model=gen_model,
-                contents=[types.Content(role="user", parts=parts)],
-                config=types.GenerateContentConfig(response_modalities=["IMAGE", "TEXT"]),
-            )
-        except Exception as e:
-            if attempt < max_retries:
-                print(f"  [RETRY {attempt+1}/{max_retries}] Error: {e}")
-                time.sleep(2)
-                continue
-            print(f"  ERROR: Cover generation failed after {max_retries+1} attempts: {e}")
-            return None
+    try:
+        for attempt in range(max_retries + 1):
+            try:
+                result = mcp_client.call_tool("imagen_generate", {
+                    "prompt": prompt,
+                    "image_urls": image_urls,
+                })
+            except Exception as e:
+                if attempt < max_retries:
+                    print(f"  [RETRY {attempt+1}/{max_retries}] Error: {e}")
+                    time.sleep(2)
+                    continue
+                print(f"  ERROR: Cover generation failed after {max_retries+1} attempts: {e}")
+                return None
 
-        if not response.candidates:
-            if attempt < max_retries:
-                print(f"  [RETRY {attempt+1}/{max_retries}] No candidates, retrying...")
-                time.sleep(2)
-                continue
-            print("  No candidates returned for cover")
-            return None
+            text = extract_text_content(result)
+            urls = extract_image_urls(text)
 
-        for part in response.candidates[0].content.parts:
-            if part.inline_data and part.inline_data.data:
-                mime_out = part.inline_data.mime_type or "image/png"
-                ext = ".png" if "png" in mime_out else ".webp" if "webp" in mime_out else ".png"
-                filename = f"cover_{int(time.time())}_{uuid.uuid4().hex[:6]}{ext}"
-                filepath = os.path.join(output_dir, filename)
-                os.makedirs(output_dir, exist_ok=True)
-                with open(filepath, "wb") as f:
-                    f.write(part.inline_data.data)
-                size_kb = len(part.inline_data.data) / 1024
-                print(f"  Cover saved: {os.path.abspath(filepath)} ({size_kb:.1f} KB)")
-                return os.path.abspath(filepath)
+            if not urls:
+                if attempt < max_retries:
+                    print(f"  [RETRY {attempt+1}/{max_retries}] No download URL in response, retrying...")
+                    time.sleep(2)
+                    continue
+                print("  No download URLs in cover generation response after retries")
+                return None
 
-        if attempt < max_retries:
-            print(f"  [RETRY {attempt+1}/{max_retries}] No image in response, retrying...")
-            time.sleep(2)
-            continue
+            os.makedirs(output_dir, exist_ok=True)
+            filename = f"cover_{int(time.time())}_{uuid.uuid4().hex[:6]}.png"
+            filepath = os.path.join(output_dir, filename)
+            download_image(urls[0], filepath)
+            size_kb = os.path.getsize(filepath) / 1024
+            print(f"  Cover saved: {os.path.abspath(filepath)} ({size_kb:.1f} KB)")
+            return os.path.abspath(filepath)
 
-    print("  No image in cover generation response after retries")
-    return None
+        return None
+    finally:
+        if own_mcp:
+            mcp_client.close()
+        if own_uploader:
+            uploader.close()
 
 
 def _build_fallback_prompt(ctx: dict, lang: str = "en") -> str:

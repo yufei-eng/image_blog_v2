@@ -10,8 +10,9 @@ description: >-
 argument-hint: <image_directory_or_file>
 metadata:
   execution_mode: sandbox
-  adk_additional_tools:
+  sandbox_tools:
     - imagen_generate
+    - image_understand
 ---
 
 # Life Comic Generator
@@ -57,6 +58,20 @@ python3 <SKILL_DIR>/main.py <image_dir_or_files> \
     [--skip-image-gen]
 ```
 
+### Sandbox Mode (Pre-analyzed Data)
+
+When running in sandbox environment (MCP tools not accessible from Python subprocess),
+Claude Code should orchestrate the workflow and pass pre-computed data to the script:
+
+```bash
+python3 <SKILL_DIR>/main.py <image_dir> \
+    --pre-analyzed analysis.json \
+    --storyboard storyboard.json \
+    --comic-images-dir ./comic_imgs \
+    --output comic.html \
+    --format all
+```
+
 ### Arguments
 
 | Arg | Description | Default |
@@ -71,6 +86,12 @@ python3 <SKILL_DIR>/main.py <image_dir_or_files> \
 | `--format` | Output format: `html` / `richtext` / `png` / `all` | `all` |
 | `--save-analysis` | Save analysis JSON for debugging | none |
 | `--skip-image-gen` | Skip comic image generation (storyboard only) | false |
+| `--pre-analyzed` | Load pre-analyzed moment data from JSON (skip MCP analysis) | none |
+| `--storyboard` | Load pre-generated storyboard from JSON (skip MCP storyboard gen) | none |
+| `--comic-images-dir` | Directory with pre-generated comic images (skip MCP image gen) | none |
+| `--emit-analyze-call` | Output complete `image_understand` MCP tool call JSON and exit | none |
+| `--emit-imagen-call` | Output complete `imagen_generate` MCP tool call JSON from storyboard and exit | none |
+| `--image-urls` | JSON array of image download URLs (file path or inline JSON), used with `--emit-*` | none |
 
 ### Output Format Selection
 
@@ -91,32 +112,143 @@ By default (`--format all`), all three formats are generated every time:
 
 ### Panel Count Support
 
-Supports **1 to 10** panels. The grid layout adapts automatically:
-- 1 panel: 1x1 | 2: 1x2 | 3: 1x3 | 4: 2x2 | 5-6: 2x3 | 7-8: 2x4 | 9: 3x3 | 10: 2x5
+Supports **1 to 10** panels. The layout uses dynamic manga-style composition with irregular, asymmetric panel sizes based on emotional weight — NOT uniform grids.
 
 ### Theme / Style Keywords
 
 Pass `--theme` to guide comic theme. Falls back to auto-detected themes if photos don't match, with `suggested_themes` providing 3 alternatives.
 
+## Sandbox Execution Workflow
+
+In sandbox, Python cannot call MCP tools. You must orchestrate the workflow yourself.
+
+### ABSOLUTE PROHIBITIONS (violating these produces garbage output):
+- **NEVER use `Read` on image files** — Read-based self-analysis is far below Gemini 3 Pro. You MUST use `image_understand`.
+- **NEVER hand-write analysis JSON yourself** — analysis MUST come from `image_understand` (Gemini 3 Pro).
+- **NEVER call `imagen_generate` without `image_urls`** — pass the photo download URLs so the comic reflects real photos.
+- **NEVER call `TodoWrite`** — wastes turns.
+- **NEVER run `main.py` without `--pre-analyzed`** — crashes (no MCP_PROXY_TOKEN).
+- **NEVER rewrite prompts from `--build-comic-prompt`** — pass the EXACT output as-is. The MCP proxy will REJECT modified prompts.
+- **NEVER write your own image analysis prompt** — MUST use the `analysis_prompt` from `--export-prompts`. The MCP proxy will REJECT custom prompts.
+
+### Step-by-step:
+
+1. **Download images** — use `download_file` to get each image's download URL, then `curl` to save locally.
+   **Save the download URLs to a file** — you need them for steps 2 and 4:
+   ```bash
+   echo '["<url1>", "<url2>", ...]' > image_urls.json
+   ```
+
+2. **Get the complete `image_understand` tool call** (MANDATORY — do NOT skip):
+   ```bash
+   python3 <SKILL_DIR>/main.py dummy --emit-analyze-call --image-urls image_urls.json 2>/dev/null
+   ```
+   This outputs a complete JSON with `tool_name` and `arguments` (including the professional analysis prompt).
+   **Call `image_understand` with the EXACT `arguments` from this output.** Do NOT modify the prompt.
+   - Parse the Gemini response and structure it into `analysis.json`:
+     - Extract: scene_summary, character_desc, action_desc, emotion, environment, time_of_day, comic_panel_desc
+     - Score on 3 axes per `scoring_weights`:
+       comic_potential(0.35), visual_distinctness(0.30), narrative_weight(0.35)
+     - Composite score (0-10), tiers per `tier_thresholds`: star_moment(>=7.5), good_moment(>=6.0), average(>=4.0), skip(<4.0)
+   - Select top N panels with diversity (emotion + environment + time_of_day variety)
+   - Save as `analysis.json`:
+     ```json
+     {
+       "all": [
+         {
+           "file": "/path/to/photo.jpg",
+           "scene_summary": "Friends laughing over hotpot",
+           "character_desc": "Three friends, casual clothes",
+           "action_desc": "Reaching for ingredients with chopsticks",
+           "emotion": "joyful, warm",
+           "environment": "Indoor hotpot restaurant, steamy",
+           "time_of_day": "evening",
+           "comic_panel_desc": "Wide shot of friends around a bubbling hotpot",
+           "score": 8.5,
+           "tier": "star_moment"
+         }
+       ],
+       "selected": [ ... ]
+     }
+     ```
+
+3. **Generate storyboard** — you generate this yourself as Claude:
+   - Use the analysis data to create a narrative storyboard
+   - Generate storyboard JSON matching this **exact structure**:
+     ```json
+     {
+       "theme": "A 2-6 word theme",
+       "emotional_arc": "Under 100 chars arc description",
+       "panels": [
+         {
+           "panel_index": 0,
+           "source_photo_index": 0,
+           "scene_description": "3-5 sentence detailed visual description (in English)",
+           "emotion_tag": "2-4 word emotion tag",
+           "panel_composition": "Composition suggestion"
+         }
+       ],
+       "narrative": {
+         "title": "Title matching the theme",
+         "body": "Under 250 chars poetic narrative"
+       },
+       "footer_date": "YYYY-MM-DD",
+       "suggested_themes": ["theme1", "theme2", "theme3"]
+     }
+     ```
+   - **CRITICAL**: panels array must have exactly one entry per selected moment
+   - Save as `storyboard.json`
+
+4. **Get the complete `imagen_generate` tool call**:
+   ```bash
+   python3 <SKILL_DIR>/main.py dummy --emit-imagen-call storyboard.json --image-urls image_urls.json 2>/dev/null
+   ```
+   This outputs a complete JSON with `tool_name` and `arguments` (including the professional comic prompt with dynamic manga layout instructions).
+   **Call `imagen_generate` with the EXACT `arguments` from this output.** Do NOT modify the prompt.
+   - **Download via signed URL** (do NOT `curl` the imagen_generate URL directly — it requires auth and will return a Google OAuth HTML page):
+     1. Extract the numeric file ID from the returned URL (e.g. `1312563282387555` from `.../media/file/1312563282387555.png`)
+     2. Call `download_file` with `{"file_id": "<extracted_id>"}` to get a signed URL
+     3. `curl` the signed URL to save to `./comic_imgs/`
+     4. Verify the file is a real image (`file <path>` should show PNG/JPEG, not HTML)
+
+5. **Run the script** with pre-computed data:
+   ```bash
+   python3 <SKILL_DIR>/main.py <image_dir> \
+       --pre-analyzed analysis.json \
+       --storyboard storyboard.json \
+       --comic-images-dir ./comic_imgs \
+       --output comic.html \
+       --format all
+   ```
+
+6. **Upload and deliver** — Upload generated files and provide download links.
+
 ## Configuration
 
-The skill requires a `config.json` in the same directory as `main.py`. Copy from `config.json.example` and fill in the Compass API token:
+### Sandbox (online)
+
+No `config.json` needed. Claude Code orchestrates MCP tools directly and passes results
+to the script via `--pre-analyzed`, `--storyboard`, `--comic-images-dir` parameters.
+
+### Direct MCP mode (non-sandbox)
+
+When running outside sandbox, the script calls MCP tools directly via HTTP.
+Create `config.json` in the same directory as `main.py`:
 
 ```json
 {
-  "compass_api": {
-    "base_url": "https://compass-api.example.com/v1",
-    "service_name": "erhe-pm-aigc",
-    "client_token": "<YOUR_TOKEN>",
-    "understanding_model": "gemini-3-pro-preview",
-    "generation_model": "gemini-3.1-flash-image-preview"
+  "mcp_server": {
+    "url": "<mcpserver_sse_endpoint>",
+    "timeout": 300
+  },
+  "file_upload": {
+    "url": "<file_upload_endpoint>",
+    "timeout": 60
   }
 }
 ```
 
-Alternatively, set the `COMPASS_CLIENT_TOKEN` environment variable (takes precedence over config file).
-
-If `config.json` is missing and the env var is not set, the script exits with `ERROR: Compass API client_token not found.` — create the config file before running.
+Environment variable overrides: `MCP_SERVER_URL`, `FILE_UPLOAD_URL`.
 
 ## Capabilities
 

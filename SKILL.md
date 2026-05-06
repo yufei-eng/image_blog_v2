@@ -11,8 +11,9 @@ description: >-
 argument-hint: <image_directory_or_file>
 metadata:
   execution_mode: sandbox
-  adk_additional_tools:
+  sandbox_tools:
     - imagen_generate
+    - image_understand
 ---
 
 # Image Blog & Life Comic Skill
@@ -37,38 +38,55 @@ Two photo-to-content generation skills powered by Gemini 3 Pro + Gemini 3.1 Flas
 
 ## Setup (in sandbox)
 
-**Quick-start note**: The code has a built-in API key fallback chain that automatically checks env vars in this order: `COMPASS_CLIENT_TOKEN` → `COMPASS_API_KEY` → `ANTHROPIC_API_KEY` → `GOOGLE_API_KEY` → `GEMINI_API_KEY` → config.json. If any of these env vars is already set in the sandbox environment, you can **skip the config.json setup steps** below — the code will pick up the key automatically. Just download, install dependencies, and run.
-
 Download and install the skill:
 
 ```bash
 # Download
-curl -sL https://codeload.github.com/yufei-eng/image_blog_v2/zip/refs/heads/main -o /tmp/image_blog.zip
-cd /tmp && unzip -qo image_blog.zip && cd image_blog_v2-main
+curl -sL <github_zip_url> -o /tmp/image_blog.zip
+cd /tmp && unzip -qo image_blog.zip && cd image_blog_v2-*
 
 # Install dependencies
-pip install -q google-genai Pillow playwright
+bash install.sh
+pip install -q Pillow playwright 2>/dev/null || true
 python -m playwright install chromium 2>/dev/null || true
 ```
 
-Only if no API key env var is set, configure manually:
-```bash
-for skill in photo-blog life-comic; do
-  cp skills/$skill/config.json.example skills/$skill/config.json
-done
-```
+## Sandbox Execution (CRITICAL — read before running)
 
-If `COMPASS_API_KEY` env var is set but you still want config.json:
-```bash
-for skill in photo-blog life-comic; do
-  python3 -c "
-import json, os
-cfg = json.load(open('skills/$skill/config.json'))
-cfg['compass_api']['client_token'] = os.environ.get('COMPASS_API_KEY', cfg['compass_api']['client_token'])
-json.dump(cfg, open('skills/$skill/config.json', 'w'), indent=2)
-"
-done
-```
+In sandbox, Python scripts **cannot** call MCP tools directly. You must orchestrate the workflow yourself.
+
+### MANDATORY WORKFLOW — follow this exact order, no deviation:
+
+1. `download_file` each user photo → save the **download URLs** (you need them for step 4)
+2. `curl` download photos to local disk
+3. `python3 <skill_dir>/main.py dummy --export-prompts` → get the analysis prompt text
+4. **`image_understand`** tool with `prompt` = exported analysis prompt, `image_urls` = the download URLs from step 1 → returns Gemini 3 Pro analysis
+5. Parse Gemini result → write `analysis.json`
+6. Generate blog/comic content JSON → save as `blog.json` / `storyboard.json`
+7. **Build imagen prompts** (MANDATORY — do NOT write your own prompt):
+   - **photo-blog cover**: `python3 <skill_dir>/skills/photo-blog/main.py dummy --build-cover-prompt blog.json 2>/dev/null`
+   - **life-comic image**: `python3 <skill_dir>/skills/life-comic/main.py dummy --build-comic-prompt storyboard.json 2>/dev/null`
+   - These commands output the exact prompt text to use with `imagen_generate`. **NEVER compose your own imagen prompt** — the built-in templates contain critical layout/style instructions (dynamic manga panel sizing, photographic cover style, etc.) that you cannot replicate.
+8. **`imagen_generate`** — call ONCE PER SKILL being generated:
+   - `prompt`: the exact output from step 7 (do NOT modify it)
+   - `image_urls`: the SAME download URLs from step 1 (REQUIRED — without these, the generated image will be generic AI art unrelated to user photos)
+   - When running BOTH skills, you MUST call `imagen_generate` TWICE (once for cover, once for comic). Do NOT skip either.
+   - **CRITICAL — downloading generated images**: The URLs returned by `imagen_generate` (e.g. `https://test.migoo.ai/beeai/api/v1/media/file/1312563282387555.png`) require authentication and **cannot be downloaded with `curl` directly** (you'll get a Google OAuth HTML page instead of an image). To download:
+     1. Extract the numeric file ID from the URL path (e.g. `1312563282387555` from `.../media/file/1312563282387555.png`)
+     2. Call `download_file` with `{"file_id": "<extracted_id>"}` — this returns a **signed URL** (from `cqcp.shopee.sg`) that works without auth
+     3. `curl` the signed URL to save the image locally
+     4. **Verify** the downloaded file is a real image (check file size > 10KB and/or use `file` command) before passing it to the script
+9. Run script with `--pre-analyzed` flags AND the generated image paths from step 8
+10. `upload_file` all outputs
+
+### ABSOLUTE PROHIBITIONS (violating these will produce garbage output):
+
+- **NEVER use `Read` on image files** — Read-based self-analysis is far below Gemini 3 Pro quality. You MUST use `image_understand` for ALL image analysis.
+- **NEVER hand-write analysis JSON** — analysis MUST come from `image_understand` (Gemini 3 Pro).
+- **NEVER call `imagen_generate` without `image_urls`** — pure text prompts generate AI-imagined images unrelated to user photos. Always pass the photo download URLs.
+- **NEVER write your own imagen prompt** — use `--build-cover-prompt` / `--build-comic-prompt` to get the correct prompt. Hand-written prompts lose critical layout/style instructions (dynamic manga paneling, photographic cover style, etc.).
+- **NEVER call `TodoWrite`** — it wastes turns. Track progress internally.
+- **NEVER run `main.py` without `--pre-analyzed`** — crashes (no MCP_PROXY_TOKEN).
 
 ## Running — photo-blog
 

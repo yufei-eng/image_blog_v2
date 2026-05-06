@@ -6,24 +6,101 @@ import os
 from typing import Dict, List, Optional
 
 
-def _img_to_base64(path: str, max_width: int = 1000) -> str:
+def _img_to_base64(path: str, max_width: int = 1000) -> tuple[str, str]:
+    """Convert image to base64. Returns (base64_str, mime_type).
+
+    Handles RGBA (composite on white), RGBa (premultiplied alpha),
+    I;16 (16-bit depth), and other PIL modes robustly.
+    Returns ("", "") if the file is not a valid image.
+    """
     try:
         from PIL import Image, ImageOps
         import io
         img = Image.open(path)
         img = ImageOps.exif_transpose(img)
-        if img.mode in ("RGBA", "P", "LA"):
-            img = img.convert("RGB")
+        img = _safe_convert_rgb(img)
         w, h = img.size
         if w > max_width:
             ratio = max_width / w
             img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=90)
-        return base64.b64encode(buf.getvalue()).decode("utf-8")
-    except Exception:
+        return base64.b64encode(buf.getvalue()).decode("utf-8"), "image/jpeg"
+    except Exception as e:
+        print(f"  [WARN] PIL failed for {os.path.basename(path)}: {e}")
         with open(path, "rb") as f:
-            return base64.b64encode(f.read()).decode("utf-8")
+            header = f.read(16)
+        if not _is_image_bytes(header):
+            print(f"  [ERROR] {os.path.basename(path)} is not a valid image (got HTML or other non-image content)")
+            return "", ""
+        ext = os.path.splitext(path)[1].lower().lstrip(".")
+        mime_map = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+                    "webp": "image/webp", "gif": "image/gif"}
+        mime = mime_map.get(ext, "image/png")
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8"), mime
+
+
+def _is_image_bytes(header: bytes) -> bool:
+    """Check if file header bytes look like a known image format."""
+    if header[:8] == b'\x89PNG\r\n\x1a\n':
+        return True
+    if header[:2] == b'\xff\xd8':
+        return True
+    if header[:4] == b'RIFF' and header[8:12] == b'WEBP':
+        return True
+    if header[:6] in (b'GIF87a', b'GIF89a'):
+        return True
+    return False
+
+
+def _safe_convert_rgb(img):
+    """Convert any PIL image mode to RGB safely."""
+    from PIL import Image
+
+    mode = img.mode
+    if mode == "RGB":
+        return img
+    if mode == "RGBa":
+        img = img.convert("RGBA")
+        mode = "RGBA"
+    if mode in ("RGBA", "LA", "PA"):
+        bg = Image.new("RGB", img.size, (255, 255, 255))
+        if mode != "RGBA":
+            img = img.convert("RGBA")
+        bg.paste(img, mask=img.split()[3])
+        return bg
+    if mode.startswith("I;16") or mode in ("I", "F"):
+        return img.convert("L").convert("RGB")
+    return img.convert("RGB")
+
+
+def _normalize_storyboard(d: dict) -> dict:
+    """Normalize alternative field names from LLM output to canonical format."""
+    narrative = d.get("narrative", {})
+    if "body" not in narrative:
+        parts = []
+        for key in ("opening", "subtitle", "summary"):
+            if narrative.get(key):
+                parts.append(narrative[key])
+        if narrative.get("closing"):
+            parts.append(narrative["closing"])
+        if parts:
+            narrative["body"] = " ".join(parts)
+    if "footer_date" not in d:
+        for alt in ("date_line", "date", "dateLine"):
+            if alt in d:
+                d["footer_date"] = d[alt]
+                break
+    for panel in d.get("panels", []):
+        if "panel_index" not in panel and "panel_number" in panel:
+            panel["panel_index"] = panel["panel_number"] - 1
+        if "emotion_tag" not in panel:
+            for alt in ("emotion", "mood", "tag"):
+                if alt in panel:
+                    panel["emotion_tag"] = panel[alt]
+                    break
+    return d
 
 
 def render_comic_html(
@@ -43,6 +120,7 @@ def render_comic_html(
     Returns:
         Absolute path to generated HTML file
     """
+    storyboard = _normalize_storyboard(storyboard)
     lang = storyboard.get("_lang", "en")
     brand = "\u751f\u6d3b\u6f2b\u753b" if lang == "zh" else "Life Comic"
     theme = storyboard.get("theme", brand)
@@ -52,26 +130,26 @@ def render_comic_html(
     footer_date = storyboard.get("footer_date", "")
     panels = storyboard.get("panels", [])
 
-    comic_b64 = ""
+    comic_b64, comic_mime = "", "image/jpeg"
     if comic_image_path and os.path.exists(comic_image_path):
-        comic_b64 = _img_to_base64(comic_image_path, max_width=1200)
+        comic_b64, comic_mime = _img_to_base64(comic_image_path, max_width=1200)
 
     fallback_gallery = ""
     if not comic_b64 and reference_photo_paths:
         imgs_html = ""
         for i, pp in enumerate(reference_photo_paths[:6]):
-            b64 = _img_to_base64(pp, max_width=400)
+            b64, mime = _img_to_base64(pp, max_width=400)
             emotion_tag = panels[i].get("emotion_tag", "") if i < len(panels) else ""
             imgs_html += f"""
             <div class="fallback-panel">
-                <img src="data:image/jpeg;base64,{b64}" alt="panel-{i}" class="fallback-img">
+                <img src="data:{mime};base64,{b64}" alt="panel-{i}" class="fallback-img">
                 <span class="panel-tag">{emotion_tag}</span>
             </div>"""
         fallback_gallery = f'<div class="fallback-grid">{imgs_html}</div>'
 
     comic_section = ""
     if comic_b64:
-        comic_section = f'<img src="data:image/jpeg;base64,{comic_b64}" alt="comic" class="comic-img">'
+        comic_section = f'<img src="data:{comic_mime};base64,{comic_b64}" alt="comic" class="comic-img">'
     elif fallback_gallery:
         comic_section = fallback_gallery
 

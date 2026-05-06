@@ -11,8 +11,9 @@ description: >-
 argument-hint: <image_directory_or_file>
 metadata:
   execution_mode: sandbox
-  adk_additional_tools:
+  sandbox_tools:
     - imagen_generate
+    - image_understand
 ---
 
 # Photo Blog Generator (with AI Cover)
@@ -57,6 +58,20 @@ python3 <SKILL_DIR>/main.py <image_dir_or_files> \
     [--save-analysis analysis.json]
 ```
 
+### Sandbox Mode (Pre-analyzed Data)
+
+When running in sandbox environment (MCP tools not accessible from Python subprocess),
+Claude Code should orchestrate the workflow and pass pre-computed data to the script:
+
+```bash
+python3 <SKILL_DIR>/main.py <image_dir> \
+    --pre-analyzed analysis.json \
+    --blog-content blog.json \
+    --cover-path cover.png \
+    --output blog.html \
+    --format all
+```
+
 ### Arguments
 
 | Arg | Description | Default |
@@ -70,6 +85,12 @@ python3 <SKILL_DIR>/main.py <image_dir_or_files> \
 | `--format` | Output format: `html` / `richtext` / `png` / `all` | `all` |
 | `--skip-cover` | Skip AI cover generation, use original photo as hero | false |
 | `--save-analysis` | Save analysis JSON for debugging | none |
+| `--pre-analyzed` | Load pre-analyzed photo data from JSON (skip MCP analysis) | none |
+| `--blog-content` | Load pre-generated blog content from JSON (skip MCP text gen) | none |
+| `--cover-path` | Use pre-generated cover image (skip MCP cover gen) | none |
+| `--emit-analyze-call` | Output complete `image_understand` MCP tool call JSON and exit | none |
+| `--emit-imagen-call` | Output complete `imagen_generate` MCP tool call JSON from blog content and exit | none |
+| `--image-urls` | JSON array of image download URLs (file path or inline JSON), used with `--emit-*` | none |
 
 ### Output Format Selection
 
@@ -96,25 +117,133 @@ Supports **1 to 10** input images. Works with a single photo up to large albums 
 
 Pass `--theme` to guide generation toward a specific angle. If the photos don't match the theme (fewer than 2 relevant photos), the skill falls back to auto-detected themes and returns `suggested_themes` with 3 alternatives.
 
+## Sandbox Execution Workflow
+
+In sandbox, Python cannot call MCP tools. You must orchestrate the workflow yourself.
+
+### ABSOLUTE PROHIBITIONS (violating these produces garbage output):
+- **NEVER use `Read` on image files** — Read-based self-analysis is far below Gemini 3 Pro. You MUST use `image_understand`.
+- **NEVER hand-write analysis JSON yourself** — analysis MUST come from `image_understand` (Gemini 3 Pro).
+- **NEVER call `imagen_generate` without `image_urls`** — pass the photo download URLs so the cover is based on real photos.
+- **NEVER call `TodoWrite`** — wastes turns.
+- **NEVER run `main.py` without `--pre-analyzed`** — crashes (no MCP_PROXY_TOKEN).
+- **NEVER rewrite prompts from `--build-cover-prompt`** — pass the EXACT output as-is. The MCP proxy will REJECT modified prompts.
+- **NEVER write your own image analysis prompt** — MUST use the `analysis_prompt` from `--export-prompts`. The MCP proxy will REJECT custom prompts.
+
+### Step-by-step:
+
+1. **Download images** — use `download_file` to get each image's download URL, then `curl` to save locally.
+   **Save the download URLs to a file** — you need them for steps 2 and 4:
+   ```bash
+   echo '["<url1>", "<url2>", ...]' > image_urls.json
+   ```
+
+2. **Get the complete `image_understand` tool call** (MANDATORY — do NOT skip):
+   ```bash
+   python3 <SKILL_DIR>/main.py dummy --emit-analyze-call --image-urls image_urls.json 2>/dev/null
+   ```
+   This outputs a complete JSON with `tool_name` and `arguments` (including the professional analysis prompt).
+   **Call `image_understand` with the EXACT `arguments` from this output.** Do NOT modify the prompt.
+   - Parse the Gemini response and structure it into `analysis.json`:
+     - Extract: scene, people, action, mood, location, time_of_day, objects, narrative_hook
+     - Score on 5 axes per `scoring_weights`:
+       visual_appeal(0.20), story_value(0.25), emotion_intensity(0.25),
+       uniqueness(0.15), technical_quality(0.15)
+     - Composite score (0-10), tiers per `tier_thresholds`: highlight(>=8.0), good(>=6.5), average(>=4.5), skip(<4.5)
+   - Select top N highlights with diversity (vary mood, location, scene)
+   - Save as `analysis.json`:
+     ```json
+     {
+       "all": [
+         {
+           "file": "/path/to/photo.jpg",
+           "scene": "A bustling night market with neon lights",
+           "people": "A couple browsing food stalls",
+           "action": "Selecting skewers from a vendor",
+           "mood": "lively, excited",
+           "location": "Night market street",
+           "time_of_day": "evening",
+           "objects": ["neon signs", "food stalls", "skewers"],
+           "narrative_hook": "The glow of neon against their smiles",
+           "orientation_correct": true,
+           "score": 8.5,
+           "tier": "highlight"
+         }
+       ],
+       "highlights": [ ... ]
+     }
+     ```
+
+3. **Generate blog content** — you generate this yourself as Claude:
+   - Use the analysis data to create a narrative blog
+   - Generate blog JSON matching this **exact structure**:
+     ```json
+     {
+       "title": "A poetic 3-6 word title",
+       "hero_image_index": 0,
+       "description": { "text": "Under 150 chars atmospheric sentence", "image_index": 0 },
+       "insights": [
+         { "text": "Under 150 chars evocative caption", "image_index": 0 }
+       ],
+       "tip": "Under 150 chars practical tip",
+       "footer_date": "YYYY-MM-DD",
+       "suggested_themes": ["theme1", "theme2", "theme3"]
+     }
+     ```
+   - **CRITICAL**: insights array must have exactly one entry per highlight photo
+   - Save as `blog.json`
+
+4. **Get the complete `imagen_generate` tool call** (MANDATORY — do NOT skip):
+   ```bash
+   python3 <SKILL_DIR>/main.py dummy --emit-imagen-call blog.json --image-urls image_urls.json 2>/dev/null
+   ```
+   This outputs a complete JSON with `tool_name` and `arguments` (including the template-matched cover prompt).
+   **Call `imagen_generate` with the EXACT `arguments` from this output.** Do NOT modify the prompt.
+   - **Download via signed URL** (do NOT `curl` the imagen_generate URL directly — it requires auth and will return a Google OAuth HTML page):
+     1. Extract the numeric file ID from the returned URL (e.g. `1312563282387555` from `.../media/file/1312563282387555.png`)
+     2. Call `download_file` with `{"file_id": "<extracted_id>"}` to get a signed URL
+     3. `curl` the signed URL to save as `cover.png`
+     4. Verify the file is a real image (`file cover.png` should show PNG/JPEG, not HTML)
+   - If `imagen_generate` fails or is cancelled, **retry it** — do NOT fall back to `--skip-cover`
+
+5. **Run the script** with pre-computed data:
+   ```bash
+   python3 <SKILL_DIR>/main.py <image_dir> \
+       --pre-analyzed analysis.json \
+       --blog-content blog.json \
+       --cover-path cover.png \
+       --output blog.html \
+       --format all
+   ```
+
+6. **Upload and deliver** — Upload generated files and provide download links.
+
 ## Configuration
 
-The skill requires a `config.json` in the same directory as `main.py`. Copy from `config.json.example` and fill in the Compass API token:
+### Sandbox (online)
+
+No `config.json` needed. Claude Code orchestrates MCP tools directly and passes results
+to the script via `--pre-analyzed`, `--blog-content`, `--cover-path` parameters.
+
+### Direct MCP mode (non-sandbox)
+
+When running outside sandbox, the script calls MCP tools directly via HTTP.
+Create `config.json` in the same directory as `main.py`:
 
 ```json
 {
-  "compass_api": {
-    "base_url": "https://compass-api.example.com/v1",
-    "service_name": "erhe-pm-aigc",
-    "client_token": "<YOUR_TOKEN>",
-    "understanding_model": "gemini-3-pro-preview",
-    "generation_model": "gemini-3.1-flash-image-preview"
+  "mcp_server": {
+    "url": "<mcpserver_sse_endpoint>",
+    "timeout": 300
+  },
+  "file_upload": {
+    "url": "<file_upload_endpoint>",
+    "timeout": 60
   }
 }
 ```
 
-Alternatively, set the `COMPASS_CLIENT_TOKEN` environment variable (takes precedence over config file).
-
-If `config.json` is missing and the env var is not set, the script exits with `ERROR: Compass API client_token not found.` — create the config file before running.
+Environment variable overrides: `MCP_SERVER_URL`, `FILE_UPLOAD_URL`.
 
 ## AI Cover Image
 
